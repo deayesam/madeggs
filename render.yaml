@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: mad-eggs
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
