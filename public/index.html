@@ -92,6 +92,8 @@ input.t:focus{border-color:var(--purple)}
 /* game */
 #s-game{padding:0;background:#000;overflow:hidden}
 #cv{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#cv3{position:absolute;inset:0;width:100%;height:100%;display:none;touch-action:none}
+body.v3 #st-aim{display:none!important}
 #hud{position:absolute;inset:0;pointer-events:none}
 #hud *{touch-action:none}
 #h-top{position:absolute;top:max(6px,env(safe-area-inset-top));left:0;right:0;display:flex;justify-content:center;align-items:flex-start;gap:8px;padding:0 10px}
@@ -277,6 +279,7 @@ input[type=range]{width:100%;accent-color:var(--purple)}
 
 <!-- GAME -->
 <section class="screen" id="s-game">
+  <canvas id="cv3"></canvas>
   <canvas id="cv"></canvas>
   <div id="hud">
     <div id="dmgflash"></div>
@@ -321,7 +324,7 @@ const MAPS_UI = [{ id: 'factory', name: 'EGG FACTORY' }, { id: 'alley', name: 'N
 const S = { ws: null, open: false, id: 0, room: null, game: null, screen: 'menu',
   create: { mode: 'ffa', max: 4, duration: 3, map: 'factory', abilities: true, pickups: true },
   char: +(localStorage.getItem('me_char') || 0), rtt: 0 };
-const DEF = { sound: true, vib: true, autofire: true, assist: true, lefty: false, scale: 1 };
+const DEF = { sound: true, vib: true, autofire: true, assist: true, lefty: false, scale: 1, view3d: true, sens: 1 };
 S.set = Object.assign({}, DEF, JSON.parse(localStorage.getItem('me_set') || '{}'));
 function saveSet() { localStorage.setItem('me_set', JSON.stringify(S.set)); applySet(); }
 function applySet() { document.body.classList.toggle('lefty', S.set.lefty); document.documentElement.style.setProperty('--ui', S.set.scale * (innerWidth < 520 ? 0.78 : 1)); }
@@ -500,12 +503,14 @@ $('#j-go').onclick = () => {
   send({ t: 'join', code, name, char: S.char });
 };
 function renderSettings() {
-  const rows = [['sound', 'Sound effects'], ['vib', 'Vibration'], ['autofire', 'Auto-fire when aim stick is pushed far'], ['assist', 'Aim assist (touch)'], ['lefty', 'Left-handed layout']];
+  const rows = [['sound', 'Sound effects'], ['vib', 'Vibration'], ['view3d', '3D view (third-person)'], ['autofire', 'Auto-fire (aim stick pushed far / crosshair on enemy)'], ['assist', 'Aim assist (touch)'], ['lefty', 'Left-handed layout']];
   $('#set-list').innerHTML = rows.map(r => `<div class="tog ${S.set[r[0]] ? 'on' : ''}" data-k="${r[0]}"><span>${r[1]}</span><b>${S.set[r[0]] ? 'ON' : 'OFF'}</b></div>`).join('') +
     `<label class="f">BUTTON SIZE<input type="range" min="0.8" max="1.35" step="0.05" value="${S.set.scale}" id="set-scale"></label>
+     <label class="f">LOOK SENSITIVITY (3D)<input type="range" min="0.5" max="2" step="0.1" value="${S.set.sens}" id="set-sens"></label>
      <button class="btn sm" id="set-reset">RESET CONTROLS</button>`;
   $$('#set-list .tog').forEach(el => el.onclick = () => { S.set[el.dataset.k] = !S.set[el.dataset.k]; saveSet(); renderSettings(); if (el.dataset.k === 'sound') sfx('pick'); });
   $('#set-scale').oninput = e => { S.set.scale = +e.target.value; saveSet(); };
+  $('#set-sens').oninput = e => { S.set.sens = +e.target.value; saveSet(); };
   $('#set-reset').onclick = () => { S.set = Object.assign({}, DEF); saveSet(); renderSettings(); };
 }
 
@@ -597,17 +602,29 @@ function initGame(m) {
   $('#h-rot').classList.add('on'); setTimeout(() => $('#h-rot').classList.remove('on'), 5000);
   $('#b-abil').style.display = m.abilitiesOn ? 'flex' : 'none';
   const ready = Promise.race([document.fonts && document.fonts.load ? document.fonts.load('30px Bungee') : Promise.resolve(), new Promise(r => setTimeout(r, 900))]);
-  const go = () => { if (G && G.m === m) { buildFloor(); lastFrame = performance.now(); raf = requestAnimationFrame(frame); } };
+  const go = () => { if (G && G.m === m) { buildFloor(); setup3d(); lastFrame = performance.now(); raf = requestAnimationFrame(frame); } };
   ready.then(go, go);
   inTimer = setInterval(sendInput, 1000 / 30);
   bindControls();
   resize();
 }
-function stopGame() { cancelAnimationFrame(raf); clearInterval(inTimer); raf = 0; inTimer = 0; G = null; held.fire = false; }
+function setup3d() {
+  let on = false;
+  try { on = !!S.set.view3d && typeof V3 !== 'undefined' && V3.supported(); if (on) { V3.init($('#cv3'), G); V3.bindLook(); } }
+  catch (e) { console.warn('3D view unavailable, using 2D', e); on = false; }
+  G.use3d = on;
+  $('#cv3').style.display = on ? 'block' : 'none'; document.body.classList.toggle('v3', on);
+}
+function stopGame() {
+  cancelAnimationFrame(raf); clearInterval(inTimer); raf = 0; inTimer = 0; G = null; held.fire = false;
+  try { if (typeof V3 !== 'undefined') V3.clear(); } catch (e) { /* ok */ }
+  document.body.classList.remove('v3');
+}
 
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   cv.width = Math.round(innerWidth * dpr); cv.height = Math.round(innerHeight * dpr); cv.dpr = dpr;
+  if (G && G.use3d) V3.resize(innerWidth, innerHeight, dpr);
 }
 addEventListener('resize', () => { if (G) resize(); });
 
@@ -698,6 +715,7 @@ function act(a) {
 function angDiff(a, b) { let d = b - a; while (d > Math.PI) d -= 6.2832; while (d < -Math.PI) d += 6.2832; return d; }
 
 function readInput() {
+  if (G.use3d) return readInput3d();
   let mx = 0, my = 0;
   if (stickMove && stickMove.on) { mx = stickMove.x; my = stickMove.y; } else { mx = held.kx; my = held.ky; }
   let aim = G.aim, fire = held.fire || held.mdown;
@@ -886,6 +904,7 @@ function frame(now) {
   G.renderMe.x = mx; G.renderMe.y = my;
   const others = computeOthers(now).map(o => o.i === G.you ? Object.assign(o, { x: mx, y: my, a: G.aim, isMe: true, r: me.r, air: G.air > 0 ? 1 : 0 }) : o);
   G.others = others;
+  if (G.use3d) return frame3d(now, mx, my, others, me);
   // camera
   const vw = cw / sc / 2, vh = ch / sc / 2;
   G.cam.x += ((vw * 2 >= W ? W / 2 : clamp(mx, vw, W - vw)) - G.cam.x) * .25; G.cam.y += ((vh * 2 >= H ? H / 2 : clamp(my, vh, H - vh)) - G.cam.y) * .25;
@@ -998,5 +1017,7 @@ function showResults(res) {
 
 connect();
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="/view3d.js"></script>
 </body>
 </html>
