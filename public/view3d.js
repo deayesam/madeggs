@@ -52,11 +52,11 @@ const V3 = (function () {
 
   function init(canvas, G0) {
     const T = THREE;
+    if (!GEO) GEO = makeGeo();
     if (!R) {
       R = new T.WebGLRenderer({ canvas: canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
       R.setClearColor(0x05030a, 1);
       cam = new T.PerspectiveCamera(64, 1.7, 4, 3200);
-      GEO = makeGeo();
     }
     buildScene(G0);
     resize(innerWidth, innerHeight, Math.min(window.devicePixelRatio || 1, 2));
@@ -160,9 +160,7 @@ const V3 = (function () {
     const lg = new T.BufferGeometry(); lg.setAttribute('position', new T.Float32BufferAttribute(pts, 3));
     const lines = new T.LineSegments(lg, new T.LineBasicMaterial({ color: 0x14101a })); root.add(lines);
     // weapon + arms
-    const gun = new T.Group(); gun.position.set(11, 25, 11);
-    const gb = new T.Mesh(GEO.gun, dark); gb.position.x = 8; gun.add(gb);
-    const bar = new T.Mesh(GEO.barrel, trim); bar.position.x = 22; gun.add(bar); root.add(gun);
+    const gun = new T.Group(); gun.position.set(13, 25, 11); root.add(gun);
     const armR = new T.Mesh(GEO.arm, dark); armR.position.set(5, 28, 11.5); root.add(armR);
     const armL = new T.Mesh(GEO.arm, dark); armL.position.set(5, 28, -11.5); root.add(armL);
     // ground bits
@@ -172,7 +170,116 @@ const V3 = (function () {
     const shield = new T.Mesh(GEO.shield, mkB(0x9ad0ff, 0.22)); shield.position.y = 26; shield.visible = false; g.add(shield);
     const ice = new T.Mesh(GEO.ice, mkB(0xaee8ff, 0.45)); ice.position.y = 29; ice.visible = false; g.add(ice);
     return { g: g, root: root, legs: legs, mats: mats, head: head, torso: torso, ring: ring, ringMat: ringMat, shield: shield, ice: ice, ci: ci,
-      last: null, lastT: 0, phase: 0, lift: 0, flash: 0, alpha: 1, trimMat: trim };
+      last: null, lastT: 0, phase: 0, lift: 0, flash: 0, alpha: 1, trimMat: trim, gun: gun, wid: null };
+  }
+
+  /* ---------- weapon models (every weapon has its own silhouette + accent colour) ---------- */
+  const GC = {};
+  function gbox(w, h, d) { const k = 'b' + w + '_' + h + '_' + d; return GC[k] || (GC[k] = new THREE.BoxGeometry(w, h, d)); }
+  function gcyl(rt, rb, h, sg) { const k = 'c' + rt + '_' + rb + '_' + h + '_' + sg; return GC[k] || (GC[k] = new THREE.CylinderGeometry(rt, rb, h, sg || 10)); }
+  function gsph(r) { const k = 's' + r; return GC[k] || (GC[k] = new THREE.SphereGeometry(r, 12, 10)); }
+  function gtor(r, t, arc) { const k = 't' + r + '_' + t + '_' + arc; return GC[k] || (GC[k] = new THREE.TorusGeometry(r, t, 6, 22, arc)); }
+  const WCOL = { pistol: 0xffe36b, rifle: 0x3dff7a, scatter: 0xff9f43, plasma: 0xff5ee1, hammer: 0x3da5ff, blades: 0x7ff0ff, bow: 0x7fffd4, grenade: 0xffd24d, omelette: 0xffcf33 };
+
+  function makeWeapon(id) {
+    const T = THREE, g = new T.Group(), col = WCOL[id] || 0xffffff, PI2 = Math.PI / 2;
+    const dark = function () { return new T.MeshLambertMaterial({ color: 0x1a1626 }); };
+    const metal = function () { return new T.MeshLambertMaterial({ color: 0x4a4562 }); };
+    const glow = function (c) { const v = c == null ? col : c; return new T.MeshLambertMaterial({ color: v, emissive: v }); };
+    const add = function (geo, mat, x, y, z, rx, ry, rz) {
+      const m = new T.Mesh(geo, mat); m.position.set(x, y, z);
+      if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0);
+      g.add(m); return m;
+    };
+    switch (id) {
+      case 'rifle':
+        add(gbox(28, 5, 4.6), metal(), 4, 0, 0); add(gbox(10, 7, 4), dark(), -14, -1.5, 0); add(gbox(12, 6, 5), dark(), 14, 0, 0);
+        add(gcyl(1.5, 1.5, 14, 8), dark(), 23, 1, 0, 0, 0, PI2); add(gbox(5, 11, 4), dark(), 3, -7.5, 0, 0, 0, 0.15);
+        add(gcyl(2.1, 2.1, 10, 10), dark(), 5, 5.5, 0, 0, 0, PI2); add(gcyl(2, 2, 0.8, 10), glow(), 10.4, 5.5, 0, 0, 0, PI2);
+        add(gbox(12, 1, 4.8), glow(), 9, 2.8, 0); break;
+      case 'scatter':
+        add(gcyl(2.7, 2.7, 22, 10), metal(), 7, 1.5, -3, 0, 0, PI2); add(gcyl(2.7, 2.7, 22, 10), metal(), 7, 1.5, 3, 0, 0, PI2);
+        add(gcyl(3, 3, 1.6, 10), glow(), 18.5, 1.5, -3, 0, 0, PI2); add(gcyl(3, 3, 1.6, 10), glow(), 18.5, 1.5, 3, 0, 0, PI2);
+        add(gbox(10, 8, 6), dark(), -8, -2, 0, 0, 0, -0.15); add(gbox(8, 4.5, 9), glow(), 6, -2.8, 0); add(gbox(4, 4, 9), dark(), 0, 1, 0); break;
+      case 'plasma':
+        add(gcyl(5, 5, 26, 12), metal(), 3, 2, 0, 0, 0, PI2); add(gcyl(6, 6, 4, 12), dark(), -10, 2, 0, 0, 0, PI2);
+        add(gtor(5.8, 1, 6.2832), glow(), -2, 2, 0, 0, PI2, 0); add(gtor(5.8, 1, 6.2832), glow(), 8, 2, 0, 0, PI2, 0);
+        add(gsph(7), glow(), 19, 2, 0); add(gbox(5, 9, 4), dark(), -4, -6, 0); break;
+      case 'hammer':
+        add(gcyl(1.8, 1.8, 38, 8), new T.MeshLambertMaterial({ color: 0x4a3426 }), 0, 0, 0, 0, 0, PI2);
+        add(gbox(12, 15, 11), metal(), 19, 0, 0); add(gbox(10, 10, 1.2), glow(), 19, 0, 5.7); add(gbox(10, 10, 1.2), glow(), 19, 0, -5.7);
+        add(gbox(2, 4, 2), glow(), 19, 9.5, 0); add(gbox(2, 4, 2), glow(), 19, -9.5, 0); add(gbox(8, 2.6, 2.6), glow(), -12, 0, 0); break;
+      case 'blades':
+        [-6, 6].forEach(function (z, i) {
+          const sp = i ? 0.14 : -0.14;
+          add(gbox(26, 1.4, 5), new T.MeshLambertMaterial({ color: 0xcfe9ff, emissive: 0x335a66 }), 7, 0, z, 0, sp, 0);
+          add(gbox(26, 0.6, 1), glow(), 7, 0.9, z, 0, sp, 0); add(gbox(7, 3, 3), dark(), -9, 0, z, 0, sp, 0); add(gbox(2, 4, 7), glow(), -5, 0, z, 0, sp, 0);
+        }); break;
+      case 'bow':
+        add(gtor(15, 1.5, Math.PI), new T.MeshLambertMaterial({ color: 0x234d46, emissive: col, emissiveIntensity: 0.4 }), -4, 0, 0, 0, 0, -PI2);
+        add(gbox(0.6, 30, 0.6), glow(), -4, 0, 0); add(gbox(26, 1, 1), new T.MeshLambertMaterial({ color: 0xeeeeee }), 5, 0, 0);
+        add(gbox(4, 2.4, 2.4), glow(), 18.5, 0, 0); add(gbox(3, 8, 4), dark(), 11, 0, 0); break;
+      case 'grenade':
+        add(gcyl(4.2, 4.2, 22, 12), metal(), 5, 1, 0, 0, 0, PI2); add(gcyl(5.4, 5.4, 3, 12), glow(), 16.5, 1, 0, 0, 0, PI2);
+        add(gcyl(6.5, 6.5, 8, 12), dark(), -1, -1, 0, 0, 0, PI2); add(gcyl(6.8, 6.8, 1.2, 12), glow(), -3.5, -1, 0, 0, 0, PI2); add(gcyl(6.8, 6.8, 1.2, 12), glow(), 1.5, -1, 0, 0, 0, PI2);
+        add(gbox(5, 9, 4), dark(), -6, -7, 0); add(gbox(3, 3, 2), glow(), 9, 6, 0); break;
+      case 'omelette': {
+        const body = add(gsph(1), new T.MeshLambertMaterial({ color: 0xf0ead8, emissive: 0x5a4a10 }), 2, 0, 0); body.scale.set(14, 9.5, 9.5);
+        [-3.6, 0, 3.6].forEach(function (z) { add(gcyl(1.8, 1.8, 12, 8), glow(), 16, 0, z, 0, 0, PI2); });
+        add(gsph(3.4), glow(), 0, 9, 0); add(gbox(5, 8, 4), dark(), -6, -8, 0); add(gbox(8, 0.8, 0.8), dark(), 3, 4, 7.6, 0, 0, 0.5); break;
+      }
+      default: // pistol
+        add(gbox(18, 5.5, 4.6), metal(), 3, 0, 0); add(gbox(5, 10, 4), dark(), -3, -6.5, 0, 0, 0, -0.2);
+        add(gbox(4, 3, 3.2), glow(), 12.5, 0.6, 0); add(gbox(10, 1.2, 4.8), glow(), 2, 3.2, 0);
+    }
+    return g;
+  }
+
+  function setWeapon(e, id) {
+    while (e.gun.children.length) { const c = e.gun.children[0]; e.gun.remove(c); disposeObj(c); }
+    e.gun.add(makeWeapon(id || 'pistol')); e.wid = id;
+  }
+
+  /* ---------- menu / outfit previews: a slowly turning egg on the home screen ---------- */
+  const previews = []; let pvLoop = 0;
+  function preview(canvas, getCi) {
+    if (!supported() || !canvas) return false;
+    try {
+      const T = THREE; if (!GEO) GEO = makeGeo();
+      const r = new T.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+      r.setClearColor(0x000000, 0);
+      const sc = new T.Scene(), cm = new T.PerspectiveCamera(32, 1, 1, 600);
+      sc.add(new T.AmbientLight(0x9a88c8, 1.0));
+      const d = new T.DirectionalLight(0xffffff, 0.9); d.position.set(60, 120, 100); sc.add(d);
+      sc.add(new T.HemisphereLight(0xa45cff, 0x1a0f2a, 0.5));
+      const glow = new T.Mesh(new T.CircleGeometry(36, 32), new T.MeshBasicMaterial({ color: 0xa45cff, transparent: true, opacity: 0.3 }));
+      glow.rotation.x = -Math.PI / 2; glow.position.y = 0.2; sc.add(glow);
+      previews.push({ canvas: canvas, r: r, sc: sc, cm: cm, getCi: getCi, egg: null, ci: -1, w: 0, h: 0 });
+      if (!pvLoop) pvLoop = requestAnimationFrame(pvTick);
+      return true;
+    } catch (e) { return false; }
+  }
+  function pvTick(now) {
+    pvLoop = requestAnimationFrame(pvTick);
+    for (let i = 0; i < previews.length; i++) {
+      const p = previews[i], w = p.canvas.clientWidth, h = p.canvas.clientHeight;
+      if (!w || !h) continue; // screen not visible
+      if (w !== p.w || h !== p.h) {
+        p.w = w; p.h = h; p.r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        p.r.setSize(w, h, false); p.cm.aspect = w / h; p.cm.updateProjectionMatrix();
+      }
+      const ci = p.getCi();
+      if (ci !== p.ci) {
+        if (p.egg) { p.sc.remove(p.egg.g); disposeObj(p.egg.g); }
+        p.egg = makeEgg(ci); setWeapon(p.egg, 'pistol'); p.sc.add(p.egg.g); p.ci = ci;
+      }
+      const t = now / 1000;
+      p.egg.g.rotation.y = -Math.PI / 2 + 0.45 + Math.sin(t * 0.9) * 0.5;
+      p.egg.root.position.y = Math.abs(Math.sin(t * 1.8)) * 2;
+      const sw = Math.sin(t * 1.8) * 0.15; p.egg.legs[0].rotation.z = sw; p.egg.legs[1].rotation.z = -sw;
+      p.cm.position.set(0, 50, 150); p.cm.lookAt(0, 30, 0);
+      p.r.render(p.sc, p.cm);
+    }
   }
 
   /* ---------- helpers ---------- */
@@ -218,6 +325,7 @@ const V3 = (function () {
         e = ents[key] = makeEgg(ci); scene.add(e.g);
       }
       seen[key] = 1;
+      const wid = o.clone ? 'pistol' : (o.w || 'pistol'); if (e.wid !== wid) setWeapon(e, wid);
       const ang = o.isMe ? G0.aim : o.a;
       e.g.visible = true;
       e.g.position.set(o.x, 0, o.y); e.g.rotation.y = -ang;
@@ -259,11 +367,12 @@ const V3 = (function () {
         const kind = pk[3], col = kind === 'weapon' ? (RARITY[(G0.wp[pk[5]] || {}).rarity] || '#ffffff') : (ITEM_COL[kind] || '#ffffff');
         const g = new T.Group();
         const body = kind === 'weapon'
-          ? new T.Mesh(GEO.pbox, new T.MeshLambertMaterial({ color: 0x1b1626, emissive: new T.Color(col).multiplyScalar(0.55) }))
+          ? (function () { const w = makeWeapon(pk[5]); w.scale.set(1.9, 1.9, 1.9); return w; })()
           : kind === 'mystery'
             ? (function () { const m = new T.Mesh(GEO.ball, new T.MeshLambertMaterial({ color: 0xfff7e0, emissive: 0x6b4fb0 })); m.scale.set(8, 11, 8); return m; })()
             : new T.Mesh(GEO.octa, new T.MeshLambertMaterial({ color: col, emissive: new T.Color(col).multiplyScalar(0.7) }));
         body.position.y = 22; g.add(body);
+        if (kind === 'weapon') { const beam = new T.Mesh(gcyl(2.4, 2.4, 120, 8), new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.2, depthWrite: false })); beam.position.y = 60; g.add(beam); }
         const rg = new T.Mesh(GEO.pring, new T.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.65, side: T.DoubleSide }));
         rg.rotation.x = -Math.PI / 2; rg.position.y = 1.4; g.add(rg);
         g.position.set(pk[1], 0, pk[2]); scene.add(g);
@@ -362,7 +471,7 @@ const V3 = (function () {
     });
   }
 
-  return { supported: supported, init: init, clear: clear, resize: resize, render: render, project: project, bindLook: bindLook };
+  return { supported: supported, init: init, clear: clear, resize: resize, render: render, project: project, bindLook: bindLook, preview: preview };
 })();
 
 /* Movement is camera-relative in 3D: stick up = walk where the camera faces. */
