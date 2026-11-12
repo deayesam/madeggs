@@ -64,6 +64,7 @@ const V3 = (function () {
 
   function disposeObj(o) {
     o.traverse(function (n) {
+      if (n.geometry && n.geometry.userData && n.geometry.userData.own) n.geometry.dispose();
       if (n.material) { (Array.isArray(n.material) ? n.material : [n.material]).forEach(function (m) { if (m.map) m.map.dispose(); m.dispose(); }); }
     });
   }
@@ -121,56 +122,209 @@ const V3 = (function () {
     cam.updateProjectionMatrix();
   }
 
-  /* ---------- egg character ---------- */
-  function makeEgg(ci) {
-    const T = THREE, col = new T.Color(CH[ci].color), g = new T.Group(), mats = [];
+  /* ---------- customisable egg: masks, tops, bottoms, shoes (see shared/cosmetics.js) ---------- */
+  function lookSig(look, name) { return JSON.stringify(look) + '|' + String(name || '').trim().charAt(0).toUpperCase(); }
+
+  function letterTexture(ch, hex) {
+    const c = document.createElement('canvas'); c.width = c.height = 128;
+    const x = c.getContext('2d');
+    x.clearRect(0, 0, 128, 128); x.fillStyle = hex; x.font = '900 104px Rubik, Impact, sans-serif';
+    x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(ch, 64, 70);
+    return new THREE.CanvasTexture(c);
+  }
+
+  function makeEgg(look, name) {
+    const T = THREE, M = MECOS, PI2 = Math.PI / 2;
+    look = M.sanitizeLook(look);
+    const g = new T.Group(), mats = [], root = new T.Group(); g.add(root);
+    const accHex = new T.Color(CH[look.a].color).getHex();
+    const gm = function (i) { return new T.Color(M.GARMENT[i]).getHex(); };
     const mk = function (hex, em) { const m = new T.MeshLambertMaterial({ color: hex, emissive: em == null ? 0x000000 : em, transparent: true, opacity: 1 }); mats.push(m); return m; };
     const mkB = function (hex, op) { const m = new T.MeshBasicMaterial({ color: hex, transparent: true, opacity: op }); m.userData.base = op; mats.push(m); return m; };
-    const dark = mk(0x15111f), trim = mk(col.getHex(), col.getHex()), trim2 = mk(col.getHex(), col.getHex()), shell = mk(0xe9e4d6);
-    const root = new T.Group(); g.add(root);
+    const SHELL = 0xe9e4d6, BLACK = 0x15111f, WHITE = 0xffffff;
+    const trim = mk(accHex, accHex), dark = mk(BLACK), shell = mk(SHELL), metal = mk(0xc9ccd6);
+    const topC = gm(look.tc), botC = gm(look.bc), shoC = gm(look.sc);
+    const add = function (geo, mat, x, y, z, rx, ry, rz, parent) {
+      const m = new T.Mesh(geo, mat); m.position.set(x, y, z);
+      if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0);
+      (parent || root).add(m); return m;
+    };
+
+    /* legs + bottoms + shoes (hip pivots so they can swing) */
     const legs = [];
     [-5, 5].forEach(function (z) {
-      const lg = new T.Group(); lg.position.set(0, 14, z);
-      const m = new T.Mesh(GEO.leg, dark); m.position.y = -7; lg.add(m); root.add(lg); legs.push(lg);
+      const lg = new T.Group(); lg.position.set(0, 14, z); root.add(lg); legs.push(lg);
+      const bm = mk(botC);
+      if (look.b === 'shorts') { add(gbox(7.8, 8, 8.8), bm, 0, -4, 0, 0, 0, 0, lg); add(gbox(5.2, 7, 5.6), shell, 0, -10.5, 0, 0, 0, 0, lg); }
+      else {
+        add(gbox(7, 14, 8), bm, 0, -7, 0, 0, 0, 0, lg);
+        if (look.b === 'cargo') add(gbox(5, 5, 1.5), trim, 0, -5, z < 0 ? -4.6 : 4.6, 0, 0, 0, lg);
+      }
+      const sy = -11.6;
+      if (look.s === 'boots') {
+        add(gbox(12, 5, 9.4), mk(shoC), 2, sy, 0, 0, 0, 0, lg); add(gbox(7.6, 5.5, 8.6), mk(shoC), -0.2, sy + 3.2, 0, 0, 0, 0, lg);
+        add(gbox(12.2, 1.3, 9.6), trim, 2, sy + 1.4, 0, 0, 0, 0, lg);
+      } else if (look.s === 'sneakers') {
+        add(gbox(12.6, 1.6, 9.8), mk(WHITE), 2, sy - 1.2, 0, 0, 0, 0, lg); add(gbox(11, 3.6, 8.8), mk(shoC), 1.6, sy + 0.8, 0, 0, 0, 0, lg);
+        add(gbox(3.5, 2.8, 9), trim, 7.4, sy + 0.4, 0, 0, 0, 0, lg);
+      } else if (look.s === 'match') {
+        add(gbox(12, 5, 9.4), mk(topC), 2, sy, 0, 0, 0, 0, lg); add(gbox(7.6, 5.5, 8.6), mk(topC), -0.2, sy + 3.2, 0, 0, 0, 0, lg);
+        add(gbox(12.2, 1.1, 9.6), mk(WHITE), 2, sy + 0.4, 0, 0, 0, 0, lg); add(gbox(12.2, 1.1, 9.6), trim, 2, sy + 2.2, 0, 0, 0, 0, lg);
+      } else add(gbox(10.5, 3, 8.2), shell, 1.6, sy + 0.6, 0, 0, 0, 0, lg);
     });
-    const torso = new T.Mesh(GEO.torso, dark); torso.position.y = 24; root.add(torso);
-    const band = new T.Mesh(GEO.band, trim); band.position.y = 28; root.add(band);
-    const plate = new T.Mesh(GEO.plate, trim2); plate.position.set(11.4, 24, 0); plate.scale.set(0.5, 1, 1); root.add(plate);
-    const neck = new T.Mesh(GEO.neck, dark); neck.position.y = 35; root.add(neck);
-    [-12, 12].forEach(function (z) { const p = new T.Mesh(GEO.pad, dark); p.position.set(0, 31, z); root.add(p); });
-    const pack = new T.Mesh(GEO.pack, dark); pack.position.set(-11, 25, 0); root.add(pack);
-    const head = new T.Mesh(GEO.head, shell); head.scale.set(12, 15, 12); head.position.y = 46; root.add(head);
-    [-5.4, 5.4].forEach(function (z, i) {
-      const eye = new T.Mesh(GEO.eye, trim); eye.position.set(10.4, 48, z); eye.rotation.x = i ? -0.38 : 0.38; root.add(eye);
+
+    /* torso + tops */
+    const top = look.t, topMat = mk(topC);
+    const torsoMat = top === 'armor' ? dark : topMat;
+    const torso = add(gcyl(11, 12.5, 20, 12), torsoMat, 0, 24, 0);
+    add(gcyl(7, 9, 6, 10), top === 'hoodie' ? topMat : dark, 0, 35, 0);
+    const sleeveMat = (top === 'vest' || top === 'tshirt') ? shell : (top === 'tactical' || top === 'armor') ? dark : topMat;
+    [-11.5, 11.5].forEach(function (z) {
+      add(gbox(12, 5, 5), sleeveMat, 5, 28, z);
+      if (top === 'hoodie' || top === 'vest') add(gbox(2.6, 5.4, 5.4), trim, 10.6, 28, z);
     });
-    // cracked-mask lines: jagged mouth + two cracks on the shell
-    const pts = [];
-    const onHead = function (z, y) { const v = 1 - (z / 12) * (z / 12) - ((y - 46) / 15) * ((y - 46) / 15); return v > 0.02 ? 12 * Math.sqrt(v) * 1.015 : null; };
-    let prev = null;
-    for (let i = 0; i <= 8; i++) {
-      const z = -8 + i * 2, y = i % 2 ? 38.5 : 41.5, x = onHead(z, y);
-      if (x == null) continue;
-      const p = [x, y, z]; if (prev) pts.push(prev[0], prev[1], prev[2], p[0], p[1], p[2]); prev = p;
+    if (top === 'tactical') {
+      add(gcyl(12.8, 12.8, 3.2, 12), trim, 0, 28, 0); add(gbox(2, 10, 14), trim, 11.6, 24, 0); add(gbox(6, 14, 13), dark, -11, 25, 0);
+      [-12, 12].forEach(function (z) { add(gsph(5), dark, 0, 31, z); });
+    } else if (top === 'hoodie') {
+      const hood = add(gsph(1), topMat, -5, 38, 0); hood.scale.set(7, 8, 9);
+      add(gtor(7.5, 1.8, 6.2832), topMat, 0, 35.5, 0, PI2, 0, 0);
+      add(gcyl(12.9, 12.9, 2.6, 12), trim, 0, 16, 0);
+      const L = String(name || '').trim().charAt(0).toUpperCase() || 'A';
+      const lm = new T.MeshBasicMaterial({ map: letterTexture(L, CH[look.a].color), transparent: true }); lm.userData.base = 1; mats.push(lm);
+      const plane = new T.Mesh(new T.PlaneGeometry(10, 10), lm); plane.geometry.userData.own = true;
+      plane.position.set(-12.8, 25, 0); plane.rotation.y = -PI2; root.add(plane);
+    } else if (top === 'jacket') {
+      add(gbox(1.6, 17, 9), mk(0xe8d9b0), 11.7, 23.5, 0);
+      [-5.6, 5.6].forEach(function (z) { add(gbox(2, 9, 3.4), topMat, 11.5, 29, z, 0, 0, z < 0 ? 0.2 : -0.2); });
+      add(gcyl(12.9, 12.9, 2.2, 12), mk(0x5a1a1a), 0, 15.5, 0);
+    } else if (top === 'vest') {
+      const wh = mk(WHITE);
+      [29.5, 24.5].forEach(function (y, i) {
+        const w = i ? 8 : 10;
+        add(gbox(1.6, 2.6, w), wh, 11.7, y, -w * 0.4, 0.6, 0, 0); add(gbox(1.6, 2.6, w), wh, 11.7, y, w * 0.4, -0.6, 0, 0);
+      });
+      [18.5, 16].forEach(function (y) { add(gbox(1.8, 1.4, 13), trim, 11.8, y, 0); });
+      const pad = add(gsph(1), dark, 0, 32, 12.5); pad.scale.set(7, 5.5, 7.5);
+      add(gcyl(12.9, 12.9, 2.4, 12), trim, 0, 15.6, 0);
+    } else if (top === 'armor') {
+      [-12.5, 12.5].forEach(function (z) { const p = add(gsph(1), metal, 0, 32, z); p.scale.set(7, 5.5, 7.5); });
+      add(gbox(2.4, 13, 15), mk(0x4a4562), 11.8, 25, 0); add(gcyl(12.9, 12.9, 2.4, 12), trim, 0, 15.6, 0);
+    } else add(gtor(7.2, 1.2, 6.2832), topMat, 0, 35, 0, PI2, 0, 0);
+
+    /* head + masks */
+    const headCol = { skull: 0xf3f0e6, webhero: 0xc62828, monkey: 0x8a4b22, clown: 0xf8f8f8 }[look.m] || SHELL;
+    const head = add(gsph(1), mk(headCol), 0, 46, 0); head.scale.set(12, 15, 12);
+    let headMesh = head;
+    const onHead = function (z, y) { const v = 1 - (z / 12) * (z / 12) - ((y - 46) / 15) * ((y - 46) / 15); return v > 0.02 ? 12 * Math.sqrt(v) : null; };
+    // place a piece on the face surface: pivot yawed to the surface normal, piece tilted by rx/rz inside it
+    const fb = function (geo, mat, z, y, lift, rx, rz) {
+      const x = onHead(z, y); if (x == null) return null;
+      const pv = new T.Group(); pv.position.set(x, y, z); pv.rotation.y = -Math.atan2(z, x); root.add(pv);
+      const m = new T.Mesh(geo, mat); m.position.x = lift == null ? 0.4 : lift; if (rx || rz) m.rotation.set(rx || 0, 0, rz || 0); pv.add(m); return m;
+    };
+    const lines = function (pts, hex) {
+      const lg = new T.BufferGeometry(); lg.setAttribute('position', new T.Float32BufferAttribute(pts, 3)); lg.userData.own = true;
+      root.add(new T.LineSegments(lg, new T.LineBasicMaterial({ color: hex })));
+    };
+    const slit = function (mat, zs, y, rxv) { zs.forEach(function (z) { fb(gbox(2.4, 1.8, 6), mat, z, y, 0.8, z < 0 ? rxv : -rxv); }); };
+    const seriousMask = function () {
+      [-8, -4, 0, 4, 8].forEach(function (z) { fb(gbox(2.4, 9.5, 4.6), dark, z, 40, 0.8); });
+      const beak = fb(gcone(3.2, 8, 4), metal, 0, 41, 3.5, 0, -PI2);
+      void beak;
+      [-4.6, 4.6].forEach(function (z) { fb(gbox(1.2, 1.8, 5.6), trim, z, 48.6, 0.8, z < 0 ? 0.3 : -0.3); fb(gbox(1.6, 1.2, 7), dark, z, 51.4, 0.9, z < 0 ? -0.28 : 0.28); });
+    };
+    switch (look.m) {
+      case 'scary': {
+        const red = mk(0xff2a2a, 0xff2a2a), mouth = mk(0x100008), tooth = mk(WHITE);
+        slit(red, [-5, 5], 49, 0.5);
+        for (let z = -8; z <= 8; z += 2) fb(gbox(1, 4.4, 2.2), mouth, z, 38.5, 0.5);
+        for (let i = 0; i < 7; i++) { const z = -7.5 + i * 2.5; fb(gbox(1.4, 1.7, 1.4), tooth, z, i % 2 ? 40.6 : 36.6, 0.9); }
+        break;
+      }
+      case 'funny': {
+        const w = mk(WHITE), b = mk(0x0a0a14), sm = mk(0x2a1a1a);
+        [-5.2, 5.2].forEach(function (z) { fb(gsph(3.6), w, z, 49, 1.6); fb(gsph(1.6), b, z * 0.75, 48.2, 4.9); });
+        fb(gsph(2.4), mk(0xff9a8a), 0, 44.5, 1.6);
+        for (let z = -7; z <= 7; z += 2) fb(gbox(0.9, 1.1, 2.4), sm, z, 38.5 + 0.09 * z * z, 0.2);
+        fb(gbox(0.9, 3, 2.4), w, -1.2, 36.6, 0.6); fb(gbox(0.9, 3, 2.4), w, 1.2, 36.6, 0.6);
+        break;
+      }
+      case 'clown': {
+        const red = mk(0xe02020), blue = mk(0x2a6bff, 0x102a66);
+        fb(gsph(3.4), red, 0, 44, 2);
+        [-5.4, 5.4].forEach(function (z) { fb(gbox(0.9, 4, 4), blue, z, 49, 0.3, 0.785); });
+        for (let z = -7.5; z <= 7.5; z += 1.9) fb(gbox(1, 1.6, 2.2), red, z, 38.5 + 0.1 * z * z, 0.3);
+        [[-2, 56, -9, 0xff7a1a], [-2, 56, 9, 0xff7a1a], [-3, 50, -12.4, 0x35d070], [-3, 50, 12.4, 0x35d070]].forEach(function (h) { const s = add(gsph(5), mk(h[3], h[3] & 0x3f3f3f), h[0], h[1], h[2]); s.scale.set(1, 1, 1); });
+        add(gtor(8.5, 2, 6.2832), mk(0xff5ee1), 0, 36.5, 0, PI2, 0, 0);
+        break;
+      }
+      case 'serious': { slit(trim, [], 0, 0); seriousMask(); break; }
+      case 'webhero': {
+        const w = mk(WHITE, 0x888888), out = mk(0x0a0a10), pts = [];
+        const pt = function (a, r) { const z = Math.cos(a) * r * 10, y = 46 + Math.sin(a) * r * 13, x = onHead(z, y); return x == null ? null : [x + 0.25, y, z]; };
+        for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4 + 0.2, p0 = pt(a, 0.12), p1 = pt(a, 0.98); if (p0 && p1) pts.push(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]); }
+        [0.4, 0.7, 0.95].forEach(function (r) { for (let k = 0; k < 16; k++) { const p0 = pt(k * Math.PI / 8, r), p1 = pt((k + 1) * Math.PI / 8, r); if (p0 && p1) pts.push(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]); } });
+        lines(pts, 0x0a0a10);
+        [-5.6, 5.6].forEach(function (z) { const rx = z < 0 ? 0.55 : -0.55; fb(gbox(1.0, 6.2, 8.2), out, z, 48.5, 0.5, rx); fb(gbox(1.4, 5.2, 7), w, z, 48.5, 0.7, rx); });
+        break;
+      }
+      case 'skull': {
+        const blk = mk(0x0a0a10), tooth = mk(0xfffdf0), glow = mk(accHex, accHex);
+        [-5, 5].forEach(function (z) { fb(gbox(1.6, 5, 5), blk, z, 48.4, 0.5); fb(gsph(1.2), glow, z, 48.2, 1); });
+        fb(gbox(1.2, 2.6, 2), blk, 0, 43.6, 0.5);
+        [-6, -3, 0, 3, 6].forEach(function (z) { fb(gbox(1.4, 3.4, 3), tooth, z, 37.8, 0.3); });
+        [-4.5, -1.5, 1.5, 4.5].forEach(function (z) { fb(gbox(1.6, 3.6, 0.4), blk, z, 37.8, 0.4); });
+        break;
+      }
+      case 'shadow': {
+        head.visible = false;
+        const hood = add(gbox(23, 31, 21), mk(BLACK), 0, 45, 0); headMesh = hood;
+        add(gbox(19, 5, 20), dark, -1, 61.5, 0, 0, 0, 0.06);
+        const ye = mk(0xffd21f, 0xffb800), re = mk(0xff2a2a, 0xff1a1a), we = mk(WHITE, 0xaaaaaa);
+        add(gbox(1.4, 3.8, 4.6), ye, 11.9, 47, 5.2); add(gbox(1.4, 3.8, 1.2), we, 11.9, 47, 8.0);
+        add(gbox(1.4, 3.8, 4.6), ye, 11.9, 47, -5.4);
+        add(gbox(1.4, 2.4, 2.4), re, 11.9, 51.2, -6.2); add(gbox(1.4, 2.4, 2.4), re, 11.9, 43, -6.2); add(gbox(1.4, 3, 2.4), re, 11.9, 47, -9.4);
+        break;
+      }
+      case 'monkey': {
+        const pale = mk(0xf0d8d2), navy = mk(0x0a0e2a), brown = mk(0x5c2f12), cream = mk(0xe8d9b0), patch = mk(0xb36a2e);
+        [-5.3, 5.3].forEach(function (z) { fb(gsph(4.3), pale, z, 48.6, 1.2); fb(gsph(1.9), navy, z * 0.8, 48, 4.8); add(gsph(3.6), brown, 0, 47, z < 0 ? -12.6 : 12.6); });
+        fb(gsph(2.2), brown, 0, 44.5, 1.4);
+        const mz = fb(gsph(1), cream, 0, 40.2, 0.4); if (mz) mz.scale.set(3, 4, 7);
+        for (let i = 0; i < 12; i++) { const z = ((i * 37) % 17) - 8, y = 40 + ((i * 53) % 20); fb(gbox(0.8, 2.6, 2.6), patch, z, y, 0.2); }
+        break;
+      }
+      case 'spiky': {
+        seriousMask();
+        const hair = mk(0xb04dff, 0x5a1fa0);
+        for (let i = 0; i < 9; i++) {
+          const a = i / 9 * Math.PI * 2, tall = i === 0 ? 1.4 : 1, d = new T.Vector3(Math.cos(a) * 0.55, 1, Math.sin(a) * 0.55).normalize();
+          const s = add(gcone(3.4, 16 * tall, 5), hair, Math.cos(a) * 5.5 + d.x * 8 * tall, 56.5 + d.y * 8 * tall, Math.sin(a) * 5.5 + d.z * 8 * tall);
+          s.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), d);
+        }
+        break;
+      }
+      default: { // cracked classic
+        slit(trim, [], 0, 0);
+        [-5.4, 5.4].forEach(function (z, i) { add(gbox(2.6, 3.2, 5.4), trim, 10.4, 48, z, i ? -0.38 : 0.38, 0, 0); });
+        const pts = []; let prev = null;
+        for (let i = 0; i <= 8; i++) { const z = -8 + i * 2, y = i % 2 ? 38.5 : 41.5, x = onHead(z, y); if (x == null) continue; const p = [x * 1.015, y, z]; if (prev) pts.push(prev[0], prev[1], prev[2], p[0], p[1], p[2]); prev = p; }
+        [[-3, 56, 4, 51], [3, 55, 7, 50], [6, 52, -2, 45]].forEach(function (c) { const x1 = onHead(c[0], c[1]), x2 = onHead(c[2], c[3]); if (x1 != null && x2 != null) pts.push(x1, c[1], c[0], x2, c[3], c[2]); });
+        lines(pts, 0x14101a);
+      }
     }
-    [[-3, 56, 4, 51], [3, 55, 7, 50], [6, 52, -2, 45]].forEach(function (c) {
-      // top-of-head cracks (z,y pairs)
-      const x1 = onHead(c[0], c[1]), x2 = onHead(c[2], c[3]);
-      if (x1 != null && x2 != null) pts.push(x1, c[1], c[0], x2, c[3], c[2]);
-    });
-    const lg = new T.BufferGeometry(); lg.setAttribute('position', new T.Float32BufferAttribute(pts, 3));
-    const lines = new T.LineSegments(lg, new T.LineBasicMaterial({ color: 0x14101a })); root.add(lines);
-    // weapon + arms
+
+    /* weapon mount */
     const gun = new T.Group(); gun.position.set(13, 25, 11); root.add(gun);
-    const armR = new T.Mesh(GEO.arm, dark); armR.position.set(5, 28, 11.5); root.add(armR);
-    const armL = new T.Mesh(GEO.arm, dark); armL.position.set(5, 28, -11.5); root.add(armL);
-    // ground bits
+    /* ground bits */
     const shadow = new T.Mesh(GEO.shadow, mkB(0x000000, 0.35)); shadow.rotation.x = -Math.PI / 2; shadow.position.y = 0.6; g.add(shadow);
     const ringMat = mkB(0xffffff, 0.8);
     const ring = new T.Mesh(GEO.ring, ringMat); ring.rotation.x = -Math.PI / 2; ring.position.y = 1.2; ring.visible = false; g.add(ring);
     const shield = new T.Mesh(GEO.shield, mkB(0x9ad0ff, 0.22)); shield.position.y = 26; shield.visible = false; g.add(shield);
     const ice = new T.Mesh(GEO.ice, mkB(0xaee8ff, 0.45)); ice.position.y = 29; ice.visible = false; g.add(ice);
-    return { g: g, root: root, legs: legs, mats: mats, head: head, torso: torso, ring: ring, ringMat: ringMat, shield: shield, ice: ice, ci: ci,
-      last: null, lastT: 0, phase: 0, lift: 0, flash: 0, alpha: 1, trimMat: trim, gun: gun, wid: null };
+    return { g: g, root: root, legs: legs, mats: mats, head: headMesh, torso: torso, ring: ring, ringMat: ringMat, shield: shield, ice: ice,
+      sig: lookSig(look, name), last: null, lastT: 0, phase: 0, lift: 0, flash: 0, alpha: 1, gun: gun, wid: null };
   }
 
   /* ---------- weapon models (every weapon has its own silhouette + accent colour) ---------- */
@@ -178,6 +332,7 @@ const V3 = (function () {
   function gbox(w, h, d) { const k = 'b' + w + '_' + h + '_' + d; return GC[k] || (GC[k] = new THREE.BoxGeometry(w, h, d)); }
   function gcyl(rt, rb, h, sg) { const k = 'c' + rt + '_' + rb + '_' + h + '_' + sg; return GC[k] || (GC[k] = new THREE.CylinderGeometry(rt, rb, h, sg || 10)); }
   function gsph(r) { const k = 's' + r; return GC[k] || (GC[k] = new THREE.SphereGeometry(r, 12, 10)); }
+  function gcone(r, h, sg) { const k = 'k' + r + '_' + h + '_' + sg; return GC[k] || (GC[k] = new THREE.ConeGeometry(r, h, sg || 6)); }
   function gtor(r, t, arc) { const k = 't' + r + '_' + t + '_' + arc; return GC[k] || (GC[k] = new THREE.TorusGeometry(r, t, 6, 22, arc)); }
   const WCOL = { pistol: 0xffe36b, rifle: 0x3dff7a, scatter: 0xff9f43, plasma: 0xff5ee1, hammer: 0x3da5ff, blades: 0x7ff0ff, bow: 0x7fffd4, grenade: 0xffd24d, omelette: 0xffcf33 };
 
@@ -242,7 +397,7 @@ const V3 = (function () {
 
   /* ---------- menu / outfit previews: a slowly turning egg on the home screen ---------- */
   const previews = []; let pvLoop = 0;
-  function preview(canvas, getCi) {
+  function preview(canvas, getSpec) {
     if (!supported() || !canvas) return false;
     try {
       const T = THREE; if (!GEO) GEO = makeGeo();
@@ -254,7 +409,7 @@ const V3 = (function () {
       sc.add(new T.HemisphereLight(0xa45cff, 0x1a0f2a, 0.5));
       const glow = new T.Mesh(new T.CircleGeometry(36, 32), new T.MeshBasicMaterial({ color: 0xa45cff, transparent: true, opacity: 0.3 }));
       glow.rotation.x = -Math.PI / 2; glow.position.y = 0.2; sc.add(glow);
-      previews.push({ canvas: canvas, r: r, sc: sc, cm: cm, getCi: getCi, egg: null, ci: -1, w: 0, h: 0 });
+      previews.push({ canvas: canvas, r: r, sc: sc, cm: cm, getSpec: getSpec, egg: null, sig: '', w: 0, h: 0 });
       if (!pvLoop) pvLoop = requestAnimationFrame(pvTick);
       return true;
     } catch (e) { return false; }
@@ -268,13 +423,13 @@ const V3 = (function () {
         p.w = w; p.h = h; p.r.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
         p.r.setSize(w, h, false); p.cm.aspect = w / h; p.cm.updateProjectionMatrix();
       }
-      const ci = p.getCi();
-      if (ci !== p.ci) {
+      const spec = p.getSpec(), sg = lookSig(spec.look, spec.name);
+      if (sg !== p.sig) {
         if (p.egg) { p.sc.remove(p.egg.g); disposeObj(p.egg.g); }
-        p.egg = makeEgg(ci); setWeapon(p.egg, 'pistol'); p.sc.add(p.egg.g); p.ci = ci;
+        p.egg = makeEgg(spec.look, spec.name); setWeapon(p.egg, 'pistol'); p.sc.add(p.egg.g); p.sig = sg;
       }
       const t = now / 1000;
-      p.egg.g.rotation.y = -Math.PI / 2 + 0.45 + Math.sin(t * 0.9) * 0.5;
+      p.egg.g.rotation.y = spec.spin ? -Math.PI / 2 + t * 0.9 : -Math.PI / 2 + 0.45 + Math.sin(t * 0.9) * 0.5;
       p.egg.root.position.y = Math.abs(Math.sin(t * 1.8)) * 2;
       const sw = Math.sin(t * 1.8) * 0.15; p.egg.legs[0].rotation.z = sw; p.egg.legs[1].rotation.z = -sw;
       p.cm.position.set(0, 50, 150); p.cm.lookAt(0, 30, 0);
@@ -318,11 +473,12 @@ const V3 = (function () {
       const o = others[i];
       if (!o.clone && !o.al) continue;
       const key = (o.clone ? 'c' : 'p') + o.i, pl = G0.players[o.i];
-      const ci = o.clone ? o.c : pl ? pl.char : 0;
+      const owner = o.clone ? G0.players[o.o] : pl, lk = (owner && owner.look) || MECOS.DEFAULT_LOOK, nm = owner ? owner.name : '';
+      const sig = lookSig(lk, nm);
       let e = ents[key];
-      if (!e || e.ci !== ci) {
+      if (!e || e.sig !== sig) {
         if (e) { scene.remove(e.g); disposeObj(e.g); }
-        e = ents[key] = makeEgg(ci); scene.add(e.g);
+        e = ents[key] = makeEgg(lk, nm); scene.add(e.g);
       }
       seen[key] = 1;
       const wid = o.clone ? 'pistol' : (o.w || 'pistol'); if (e.wid !== wid) setWeapon(e, wid);

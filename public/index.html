@@ -93,13 +93,24 @@ input.t:focus{border-color:var(--purple)}
 .big.pri{background:var(--gold);color:#241a00;box-shadow:0 6px 0 #a87a00}
 .big.pur{background:var(--purple);color:#fff;box-shadow:0 6px 0 #5a2bb0}
 /* outfit / your egg */
-#s-fit{align-items:center}
+#s-fit{align-items:center;gap:8px}
 #s-fit .back{align-self:flex-start}
-#f-egg{width:min(92vw,420px);height:min(50vh,400px);display:block}
-.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:520px}
-.chip{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;border:2px solid var(--line);background:var(--ink2);font-size:13px;letter-spacing:.05em}
-.chip i{width:14px;height:14px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--c)}
-.chip.on{border-color:var(--c);box-shadow:0 0 0 2px var(--c) inset}
+#f-egg{width:min(92vw,420px);height:min(34vh,300px);display:block;flex:none}
+.tabs{display:flex;gap:6px;overflow-x:auto;max-width:100%;padding:4px 2px;flex:none}
+.tab{flex:none;padding:9px 12px;border-radius:10px;border:2px solid var(--line);background:var(--ink2);font-size:12px;letter-spacing:.06em}
+.tab.on{background:var(--purple);border-color:var(--purple);color:#fff}
+.opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;width:100%;max-width:560px;overflow-y:auto;flex:1;min-height:0;padding:4px 2px 16px;align-content:start}
+.opt{display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 6px;border-radius:12px;border:2px solid var(--line);background:var(--ink2);font-size:11px;line-height:1.15;text-align:center}
+.opt .ic{font-size:26px}
+.opt.on{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold) inset}
+.sw{display:flex;flex-wrap:wrap;gap:8px;grid-column:1/-1;align-items:center}
+.sw b{width:100%;font-size:12px;letter-spacing:.08em;opacity:.8}
+.sw i{width:34px;height:34px;border-radius:50%;border:3px solid transparent;display:inline-block;background:var(--c)}
+.sw i.on{border-color:#fff;box-shadow:0 0 0 2px #000 inset}
+@media (orientation:landscape) and (max-height:520px){
+  #s-fit.on{display:grid;grid-template-columns:38% 1fr;grid-template-rows:auto 1fr;grid-template-areas:"back tabs" "egg opts";gap:6px 10px}
+  #s-fit .back{grid-area:back}#f-egg{grid-area:egg;width:100%;height:100%}.tabs{grid-area:tabs}.opts{grid-area:opts;max-width:none}
+}
 /* lobby */
 .code-box{display:flex;align-items:center;gap:10px;justify-content:space-between}
 .code{font-family:var(--disp);font-size:34px;letter-spacing:.08em;color:var(--gold)}
@@ -248,11 +259,10 @@ input[type=range]{width:100%;accent-color:var(--purple)}
 
 <!-- YOUR EGG (outfit) -->
 <section class="screen" id="s-fit">
-  <button class="btn sm back" data-go="menu">BACK</button>
-  <h2>YOUR EGG</h2>
+  <button class="btn sm back" id="f-back">BACK</button>
   <canvas id="f-egg"></canvas>
-  <div class="chips" id="f-chips"></div>
-  <p class="note" style="text-align:center;max-width:380px;margin-top:12px">Pick your look. Egg masks, outfits and shoes are coming next, and everyone will customise the same Mad Egg.</p>
+  <div class="tabs" id="f-tabs"></div>
+  <div class="opts" id="f-opts"></div>
 </section>
 
 <!-- CREATE -->
@@ -306,13 +316,12 @@ input[type=range]{width:100%;accent-color:var(--purple)}
 
 <!-- LOBBY -->
 <section class="screen" id="s-lobby">
-  <div class="row"><button class="btn sm" id="l-leave">LEAVE</button><div class="grow"></div><div class="note" id="l-mode"></div></div>
+  <div class="row"><button class="btn sm" id="l-leave">LEAVE</button><button class="btn sm pur" id="l-fit">OUTFIT</button><div class="grow"></div><div class="note" id="l-mode"></div></div>
   <div class="card code-box" style="margin-top:10px">
     <div><div class="note" id="l-rname">ROOM</div><div class="code" id="l-code">MAD-????</div></div>
     <div class="row"><button class="btn sm" id="l-copy">COPY</button><button class="btn sm pur" id="l-share">INVITE</button></div>
   </div>
   <h3 style="margin:16px 0 8px;font-size:15px;color:var(--mute)">PICK YOUR EGG</h3>
-  <div class="chars" id="l-chars"></div>
   <h3 style="margin:16px 0 8px;font-size:15px;color:var(--mute)">SQUAD</h3>
   <div class="plist" id="l-players"></div>
   <h3 style="margin:16px 0 8px;font-size:15px;color:var(--mute)">MATCH SETTINGS</h3>
@@ -360,6 +369,7 @@ input[type=range]{width:100%;accent-color:var(--purple)}
 
 <script src="/shared/physics.js"></script>
 <script src="/shared/characters.js"></script>
+<script src="/shared/cosmetics.js"></script>
 <script>
 'use strict';
 /* ============================ basics ============================ */
@@ -371,7 +381,14 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const MAPS_UI = [{ id: 'factory', name: 'EGG FACTORY' }, { id: 'alley', name: 'NEON ALLEY' }];
 const S = { ws: null, open: false, id: 0, room: null, game: null, screen: 'menu',
   create: { mode: 'ffa', max: 4, duration: 3, map: 'factory', abilities: true, pickups: true },
-  char: +(localStorage.getItem('me_char') || 0), rtt: 0 };
+  char: +(localStorage.getItem('me_char') || 0), look: loadLook(), rtt: 0 };
+S.char = S.look.a;
+function loadLook() { try { return MECOS.sanitizeLook(JSON.parse(localStorage.getItem('me_look'))); } catch (e) { return MECOS.sanitizeLook(null); } }
+function saveLook() {
+  S.look = MECOS.sanitizeLook(S.look); S.char = S.look.a;
+  localStorage.setItem('me_look', JSON.stringify(S.look)); localStorage.setItem('me_char', S.char);
+  if (S.id) send({ t: 'look', look: S.look });
+}
 const DEF = { sound: true, vib: true, autofire: true, assist: true, lefty: false, scale: 1, view3d: true, sens: 1 };
 S.set = Object.assign({}, DEF, JSON.parse(localStorage.getItem('me_set') || '{}'));
 function saveSet() { localStorage.setItem('me_set', JSON.stringify(S.set)); applySet(); }
@@ -525,10 +542,30 @@ $$('[data-go]').forEach(b => b.onclick = () => show(b.dataset.go));
 $('#m-play').onclick = () => show('play');
 $('#p-create').onclick = () => { $('#c-name').value = localStorage.getItem('me_name') || ''; show('create'); };
 $('#p-join').onclick = () => { $('#j-name').value = localStorage.getItem('me_name') || ''; show('join'); };
+let fitTab = 'sets';
+const FIT_TABS = [['sets', 'SETS'], ['m', 'MASK'], ['t', 'TOP'], ['b', 'BOTTOM'], ['s', 'SHOES'], ['c', 'COLORS']];
+const sameLook = (a, b) => JSON.stringify(MECOS.sanitizeLook(a)) === JSON.stringify(MECOS.sanitizeLook(b));
 function renderFit() {
-  $('#f-chips').innerHTML = CH.map((c, i) => `<button class="chip ${S.char === i ? 'on' : ''}" data-c="${i}" style="--c:${c.color}"><i></i>${c.name}</button>`).join('');
-  $$('#f-chips .chip').forEach(b => b.onclick = () => { S.char = +b.dataset.c; localStorage.setItem('me_char', S.char); renderFit(); sfx('cluck'); });
+  const C = MECOS, L = S.look;
+  $('#f-tabs').innerHTML = FIT_TABS.map(([k, n]) => `<button class="tab ${fitTab === k ? 'on' : ''}" data-k="${k}">${n}</button>`).join('');
+  $$('#f-tabs .tab').forEach(b => b.onclick = () => { fitTab = b.dataset.k; renderFit(); });
+  const opt = (list, key) => list.map(o => `<button class="opt ${L[key] === o.id ? 'on' : ''}" data-v="${o.id}"><span class="ic">${o.icon}</span>${o.name}</button>`).join('');
+  const sw = (title, key, colors) => `<div class="sw"><b>${title}</b>${colors.map((c, i) => `<i class="${L[key] === i ? 'on' : ''}" data-k="${key}" data-v="${i}" style="--c:${c}"></i>`).join('')}</div>`;
+  let html = '';
+  if (fitTab === 'sets') html = C.PRESETS.map(p => `<button class="opt ${sameLook(L, p.look) ? 'on' : ''}" data-p="${p.id}"><span class="ic">${p.icon}</span>${p.name}</button>`).join('');
+  else if (fitTab === 'm') html = opt(C.MASKS, 'm');
+  else if (fitTab === 't') html = opt(C.TOPS, 't');
+  else if (fitTab === 'b') html = opt(C.BOTTOMS, 'b');
+  else if (fitTab === 's') html = opt(C.SHOES, 's');
+  else html = sw('TOP COLOUR', 'tc', C.GARMENT) + sw('BOTTOM COLOUR', 'bc', C.GARMENT) + sw('SHOE COLOUR', 'sc', C.GARMENT) + sw('ACCENT (eyes, trim, bullets, name)', 'a', CH.map(c => c.color));
+  $('#f-opts').innerHTML = html;
+  const done = () => { saveLook(); renderFit(); sfx('cluck'); };
+  $$('#f-opts .opt[data-v]').forEach(b => b.onclick = () => { S.look[fitTab] = b.dataset.v; done(); });
+  $$('#f-opts .opt[data-p]').forEach(b => b.onclick = () => { S.look = Object.assign({}, C.PRESETS.find(p => p.id === b.dataset.p).look); done(); });
+  $$('#f-opts .sw i').forEach(b => b.onclick = () => { S.look[b.dataset.k] = +b.dataset.v; done(); });
 }
+$('#f-back').onclick = () => show(S.room ? 'lobby' : 'menu');
+$('#l-fit').onclick = () => { renderFit(); show('fit'); };
 $('#m-fit').onclick = () => { renderFit(); show('fit'); };
 $('#m-how').onclick = () => show('how');
 $('#m-set').onclick = () => { renderSettings(); show('set'); };
@@ -547,13 +584,13 @@ tog($('#c-abil'), true, v => S.create.abilities = v);
 tog($('#c-pick'), true, v => S.create.pickups = v);
 $('#c-go').onclick = () => {
   const name = $('#c-name').value.trim() || 'Egg'; localStorage.setItem('me_name', name);
-  send({ t: 'create', name, char: S.char, settings: Object.assign({ roomName: $('#c-room').value || 'MAD ROOM' }, S.create) });
+  send({ t: 'create', name, char: S.char, look: S.look, settings: Object.assign({ roomName: $('#c-room').value || 'MAD ROOM' }, S.create) });
 };
 $('#j-code').oninput = e => { e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, ''); };
 $('#j-go').onclick = () => {
   const name = $('#j-name').value.trim() || 'Egg'; localStorage.setItem('me_name', name);
   const code = $('#j-code').value.trim(); if (code.length < 4) return err('Enter the room code from your host.');
-  send({ t: 'join', code, name, char: S.char });
+  send({ t: 'join', code, name, char: S.char, look: S.look });
 };
 function renderSettings() {
   const rows = [['sound', 'Sound effects'], ['vib', 'Vibration'], ['view3d', '3D view (third-person)'], ['autofire', 'Auto-fire (aim stick pushed far / crosshair on enemy)'], ['assist', 'Aim assist (touch)'], ['lefty', 'Left-handed layout']];
@@ -573,22 +610,17 @@ function pingBars(ms) {
   const lv = ms === 0 ? 0 : ms < 80 ? 4 : ms < 150 ? 3 : ms < 260 ? 2 : 1;
   return `<span class="ping ${lv >= 3 ? '' : lv === 2 ? 'mid' : 'bad'}" title="${ms}ms">${[1, 2, 3, 4].map(i => `<i style="height:${i * 3 + 2}px" class="${i <= lv ? 'on' : ''}"></i>`).join('')}</span>`;
 }
+function maskIcon(l) { const m = MECOS.MASKS.find(x => l && x.id === l.m); return m ? m.icon : ''; }
 function renderLobby() {
   const r = S.room; if (!r) return;
   const me = r.players.find(p => p.id === S.id); if (me) S.char = me.char;
   const host = r.host === S.id, st = r.settings;
   $('#l-code').textContent = r.code; $('#l-rname').textContent = st.roomName;
   $('#l-mode').textContent = `${MODE_NAMES[st.mode]} | ${st.duration} MIN | ${r.players.length}/${st.max}`;
-  $('#l-chars').innerHTML = CH.map((c, i) => {
-    const who = r.players.filter(p => p.char === i).map(p => esc(p.name)).join(', ');
-    return `<div class="cc ${me && me.char === i ? 'me' : ''}" data-c="${i}" style="border-color:${me && me.char === i ? c.color : ''};box-shadow:${me && me.char === i ? '0 0 0 2px ' + c.color + ',0 8px 24px ' + c.color + '55' : 'none'}">
-      ${portrait(i)}<div class="nm" style="color:${c.color}">${c.name}</div><div class="tg">${c.tag}</div><div class="who">${who}</div></div>`;
-  }).join('');
-  $$('#l-chars .cc').forEach(el => el.onclick = () => { localStorage.setItem('me_char', el.dataset.c); S.char = +el.dataset.c; send({ t: 'char', char: +el.dataset.c }); sfx('cluck'); });
   $('#l-players').innerHTML = r.players.map(p => {
     const c = CH[p.char];
     const team = st.mode === 'tdm' ? `<span class="chip t${p.team}" data-team="${p.id}">${TEAM[p.team].n}</span>` : '';
-    return `<div class="pr ${p.on ? '' : 'dc'}">${portrait(p.char)}<div class="n" style="color:${c.color}">${esc(p.name)}${p.id === S.id ? ' (you)' : ''}</div>${team}
+    return `<div class="pr ${p.on ? '' : 'dc'}">${portrait(p.char)}<div class="n" style="color:${c.color}">${maskIcon(p.look)} ${esc(p.name)}${p.id === S.id ? ' (you)' : ''}</div>${team}
       ${p.id === r.host ? '<span class="chip host">HOST</span>' : `<span class="chip ${p.ready ? 'rdy' : ''}">${p.on ? (p.ready ? 'READY' : 'NOT READY') : 'OFFLINE'}</span>`}${pingBars(p.on ? p.ping : 0)}</div>`;
   }).join('');
   $$('#l-players [data-team]').forEach(el => { if (+el.dataset.team === S.id) el.onclick = () => send({ t: 'team', team: me.team ? 0 : 1 }); });
@@ -1075,7 +1107,7 @@ connect();
 <script>
 (function () {
   let ok1 = false, ok2 = false;
-  try { if (typeof V3 !== 'undefined' && V3.supported()) { ok1 = V3.preview($('#m-egg'), () => S.char); ok2 = V3.preview($('#f-egg'), () => S.char); } } catch (e) { console.warn('preview off', e); }
+  try { if (typeof V3 !== 'undefined' && V3.supported()) { const nm = () => localStorage.getItem('me_name') || ''; ok1 = V3.preview($('#m-egg'), () => ({ look: S.look, name: nm(), spin: false })); ok2 = V3.preview($('#f-egg'), () => ({ look: S.look, name: nm(), spin: true })); } } catch (e) { console.warn('preview off', e); }
   if (ok1) $('#logo').style.display = 'none'; else $('#m-egg').style.display = 'none';
   if (!ok2) $('#f-egg').style.display = 'none';
 })();
