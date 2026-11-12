@@ -11,6 +11,11 @@
     { id: 'crazysam', name: 'CRAZYSAM', color: '#38e07b', dark: '#0f8f46', tag: 'Unpredictable. Reckless. Chaos.',
       shout: 'WHEEEEE!', bio: 'Plan A was a coin flip. Plan B was also a coin flip.' },
     { id: 'lawrence', name: 'LAWRENCE', color: '#3b9dff', dark: '#1a5fb8', tag: 'Calm, analytical, tactical.',
-      shout: 'As predicted.', bio: 'Reads the room. Then reads your next move.' }
+      shout: 'As predicted.', bio: 'Reads the room. Then reads your next move.' },
+    // extra accent colours for the customisable egg (indexes 4-7)
+    { id: 'red', name: 'RED', color: '#ff3c3c', dark: '#a81616', tag: '', shout: 'Cluck.', bio: '' },
+    { id: 'pink', name: 'PINK', color: '#ff5ee1', dark: '#a8239a', tag: '', shout: 'Cluck.', bio: '' },
+    { id: 'cyan', name: 'CYAN', color: '#2ee6d6', dark: '#0f8f86', tag: '', shout: 'Cluck.', bio: '' },
+    { id: 'orange', name: 'ORANGE', color: '#ff9f43', dark: '#b8661a', tag: '', shout: 'Cluck.', bio: '' }
   ];
 });
