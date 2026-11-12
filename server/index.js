@@ -8,6 +8,7 @@ const { Game, TICK } = require('./game');
 const { MAPS, MAP_LIST } = require('./data/maps');
 const { WEAPON_INFO } = require('./data/weapons');
 const { ABILITY_INFO } = require('./data/abilities');
+const COS = require('../shared/cosmetics.js');
 
 const ROOT = path.join(__dirname, '..');
 const PORT = process.env.PORT || 3000;
@@ -59,7 +60,7 @@ function cleanSettings(s, cur, count) {
 function roomState(r) {
   return {
     code: r.code, phase: r.phase, host: r.hostId, settings: r.settings,
-    players: [...r.players.values()].map(p => ({ id: p.id, name: p.name, char: p.char, ready: p.id === r.hostId ? true : p.ready, team: p.team, ping: p.ping, on: p.connected }))
+    players: [...r.players.values()].map(p => ({ id: p.id, name: p.name, char: p.char, look: p.look, ready: p.id === r.hostId ? true : p.ready, team: p.team, ping: p.ping, on: p.connected }))
   };
 }
 const pushRoom = r => { const m = JSON.stringify({ t: 'room', r: roomState(r) }); for (const p of r.players.values()) send(p.ws, m); };
@@ -68,10 +69,10 @@ function balanceTeams(r) {
   list.forEach((p, i) => { p.team = i % 2; });
   list.forEach(p => c[p.team]++);
 }
-function addPlayer(r, ws, name, char) {
+function addPlayer(r, ws, name, char, look) {
   const id = nextId++;
   const token = crypto.randomBytes(12).toString('hex');
-  const lp = { id, token, ws, name: cleanName(name) || 'EGG' + id, char: Math.max(0, Math.min(3, char | 0)), ready: false, team: 0, ping: 0, connected: true, discAt: 0 };
+  const lp = { id, token, ws, name: cleanName(name) || 'EGG' + id, char: Math.max(0, Math.min(7, char | 0)), look: COS.sanitizeLook(look), ready: false, team: 0, ping: 0, connected: true, discAt: 0 };
   const c = [0, 0]; for (const p of r.players.values()) c[p.team]++;
   lp.team = c[0] <= c[1] ? 0 : 1;
   r.players.set(id, lp); sessions.set(token, { code: r.code, id });
@@ -84,7 +85,7 @@ function startMsg(r, lp) {
   return {
     t: 'start', you: lp.id, mode: r.game.mode, abilitiesOn: r.game.abilitiesOn, pickupsOn: r.game.pickupsOn,
     map: { id: m.id, name: m.name, W: m.W, H: m.H, walls: m.walls, decor: m.decor },
-    players: [...r.game.players.values()].map(p => ({ id: p.id, name: p.name, char: p.char, team: p.team })),
+    players: [...r.game.players.values()].map(p => ({ id: p.id, name: p.name, char: p.char, look: p.look, team: p.team })),
     abilities: ABILITY_INFO, weapons: WEAPON_INFO, duration: r.settings.duration
   };
 }
@@ -145,7 +146,7 @@ function handle(ws, m) {
     const r = { code, phase: 'lobby', hostId: 0, settings: base, players: new Map(), game: null };
     r.settings = cleanSettings(m.settings, base, 1);
     rooms.set(code, r);
-    const lp = addPlayer(r, ws, m.name, m.char);
+    const lp = addPlayer(r, ws, m.name, m.char, m.look);
     r.hostId = lp.id;
     if (r.settings.mode === 'tdm') balanceTeams(r);
     return pushRoom(r);
@@ -157,7 +158,7 @@ function handle(ws, m) {
     if (!r) return send(ws, { t: 'err', msg: 'No room with that code. Check the letters and try again.' });
     if (r.phase === 'match') return send(ws, { t: 'err', msg: 'That match already started. Wait for the next round.' });
     if (r.players.size >= r.settings.max) return send(ws, { t: 'err', msg: 'Room is full.' });
-    addPlayer(r, ws, m.name, m.char);
+    addPlayer(r, ws, m.name, m.char, m.look);
     if (r.settings.mode === 'tdm') { const c = [0, 0]; for (const p of r.players.values()) if (p !== ws.lp) c[p.team]++; ws.lp.team = c[0] <= c[1] ? 0 : 1; }
     return pushRoom(r);
   }
@@ -181,7 +182,8 @@ function handle(ws, m) {
     case 'in': if (r.game && r.phase === 'match') r.game.setInput(lp.id, m); break;
     case 'act': if (r.game && r.phase === 'match') r.game.action(lp.id, String(m.a)); break;
     case 'rtt': lp.ping = Math.max(0, Math.min(999, m.ms | 0)); break;
-    case 'char': if (r.phase === 'lobby') { lp.char = Math.max(0, Math.min(3, m.char | 0)); pushRoom(r); } break;
+    case 'char': if (r.phase === 'lobby') { lp.char = Math.max(0, Math.min(7, m.char | 0)); pushRoom(r); } break;
+    case 'look': if (r.phase === 'lobby') { lp.look = COS.sanitizeLook(m.look); lp.char = lp.look.a; pushRoom(r); } break;
     case 'ready': if (r.phase === 'lobby') { lp.ready = !!m.ready; pushRoom(r); } break;
     case 'team':
       if (r.phase === 'lobby' && r.settings.mode === 'tdm') { lp.team = m.team === 1 ? 1 : 0; pushRoom(r); } break;

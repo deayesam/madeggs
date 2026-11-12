@@ -77,7 +77,7 @@ class Game {
 
   newPlayer(lp) {
     return {
-      id: lp.id, name: lp.name, char: lp.char, team: this.mode === 'tdm' ? (lp.team || 0) : 0,
+      id: lp.id, name: lp.name, char: lp.char, look: lp.look, team: this.mode === 'tdm' ? (lp.team || 0) : 0,
       x: 0, y: 0, r: PLAYER_R, hp: MAX_HP, maxHp: MAX_HP, alive: true, aim: 0, mx: 0, my: 0, fire: false, seq: 0,
       q: [], lastIn: { s: 0, mx: 0, my: 0, a: 0, f: false },
       weapon: 'pistol', ammo: WEAPONS.pistol.mag, reserve: 0, reloadT: 0, nextShot: 0,
@@ -548,7 +548,7 @@ class Game {
     const base = {
       t: 's', n: this.tickN, ph: this.phase, rt: +this.phaseT.toFixed(2), tl: Math.max(0, Math.ceil(this.timeLeft)),
       rv: this.revealed ? 1 : 0, p: pl,
-      cl: this.clones.map(c => ({ i: c.id, x: +c.x.toFixed(1), y: +c.y.toFixed(1), a: +c.aim.toFixed(2), c: c.char, t: c.team })),
+      cl: this.clones.map(c => ({ i: c.id, o: c.owner, x: +c.x.toFixed(1), y: +c.y.toFixed(1), a: +c.aim.toFixed(2), c: c.char, t: c.team })),
       pr: this.projs.map(q => [Math.round(q.x), Math.round(q.y), Math.round(q.vx), Math.round(q.vy), q.type, q.c]),
       wl: this.wells.map(w => [Math.round(w.x), Math.round(w.y), w.r, +(w.until - this.t).toFixed(1)]),
       sc: [...this.players.values()].map(p => [p.id, p.stats.kills, p.stats.deaths]),
