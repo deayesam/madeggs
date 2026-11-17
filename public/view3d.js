@@ -56,7 +56,7 @@ const V3 = (function () {
     if (!R) {
       R = new T.WebGLRenderer({ canvas: canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
       R.setClearColor(0x05030a, 1);
-      cam = new T.PerspectiveCamera(64, 1.7, 4, 3200);
+      cam = new T.PerspectiveCamera(64, 1.7, 4, 6000);
     }
     buildScene(G0);
     resize(innerWidth, innerHeight, Math.min(window.devicePixelRatio || 1, 2));
@@ -79,6 +79,7 @@ const V3 = (function () {
     const T = THREE, map = G0.map, W = map.W, H = map.H;
     clear();
     scene = scene || new T.Scene();
+    if (map.decor && map.decor.theme === 'outdoor') return buildOutdoor(G0);
     scene.background = new T.Color(0x05030a);
     scene.fog = new T.Fog(0x0b0716, 520, 1700);
     scene.add(new T.AmbientLight(0x8a78b8, 0.95));
@@ -434,6 +435,180 @@ const V3 = (function () {
       const sw = Math.sin(t * 1.8) * 0.15; p.egg.legs[0].rotation.z = sw; p.egg.legs[1].rotation.z = -sw;
       p.cm.position.set(0, 50, 150); p.cm.lookAt(0, 30, 0);
       p.r.render(p.sc, p.cm);
+    }
+  }
+
+  /* ---------- outdoor map (Egg Yard): sky, grass, buildings, cars, fence ---------- */
+  const TEX = {};
+  function canvasTex(key, w, h, draw) {
+    if (!TEX[key]) {
+      const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+      const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; TEX[key] = t;
+    }
+    return TEX[key];
+  }
+  // pattern textures are light/neutral and get multiplied by the wall colour
+  function patternTex(kind) {
+    if (kind === 'brick') return canvasTex('brick', 64, 48, function (x) {
+      x.fillStyle = '#8f8f8f'; x.fillRect(0, 0, 64, 48);
+      for (let r = 0; r < 6; r++) for (let i = -1; i < 3; i++) { const g = 215 + ((r * 7 + i * 13) % 5) * 8; x.fillStyle = 'rgb(' + g + ',' + g + ',' + g + ')'; x.fillRect(i * 32 + (r % 2) * 16 + 1, r * 8 + 1, 30, 6); }
+    });
+    if (kind === 'wood') return canvasTex('wood', 64, 64, function (x) {
+      x.fillStyle = '#ffffff'; x.fillRect(0, 0, 64, 64); x.fillStyle = '#9a9a9a';
+      for (let i = 0; i < 4; i++) x.fillRect(0, i * 16, 64, 2);
+      x.fillRect(0, 0, 4, 64); x.fillRect(60, 0, 4, 64); x.fillStyle = '#5a5a5a'; [6, 58].forEach(function (px) { [4, 36].forEach(function (py) { x.fillRect(px, py, 2, 2); }); });
+    });
+    if (kind === 'plaster') return canvasTex('plaster', 64, 64, function (x) {
+      x.fillStyle = '#f4f4f4'; x.fillRect(0, 0, 64, 64);
+      for (let i = 0; i < 40; i++) { x.fillStyle = 'rgba(120,110,90,0.08)'; x.beginPath(); x.ellipse((i * 29) % 64, (i * 47) % 64, 6 + (i % 5), 4 + (i % 3), 0, 0, 6.3); x.fill(); }
+    });
+    return canvasTex('concrete', 64, 64, function (x) {
+      x.fillStyle = '#e6e6e6'; x.fillRect(0, 0, 64, 64);
+      for (let i = 0; i < 160; i++) { x.fillStyle = i % 2 ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.18)'; x.fillRect((i * 37) % 64, (i * 53) % 64, 2, 2); }
+      x.strokeStyle = 'rgba(0,0,0,0.25)'; x.beginPath(); x.moveTo(0, 32); x.lineTo(64, 32); x.stroke();
+    });
+  }
+  function wallMats(w, hgt) {
+    const T = THREE, kind = w.m === 'brick' ? 'brick' : w.m === 'plaster' ? 'plaster' : w.m === 'crate' ? 'wood' : 'concrete';
+    const t = patternTex(kind).clone(); t.needsUpdate = true; t.wrapS = t.wrapT = T.RepeatWrapping;
+    t.repeat.set(Math.max(1, Math.round(Math.max(w.w, w.h) / (kind === 'wood' ? 24 : 64))), Math.max(1, Math.round(hgt / (kind === 'wood' ? 24 : 48))));
+    const col = new T.Color(w.c || '#8d8a84');
+    const side = new T.MeshLambertMaterial({ color: col, map: t }), top = new T.MeshLambertMaterial({ color: col.clone().multiplyScalar(0.7) });
+    return [side, side, top, top, side, side];
+  }
+  function chainTexture() {
+    return canvasTex('chain', 28, 28, function (x) {
+      x.clearRect(0, 0, 28, 28); x.strokeStyle = '#c4cbd3'; x.lineWidth = 1.6; x.beginPath();
+      x.moveTo(0, 14); x.lineTo(14, 0); x.lineTo(28, 14); x.lineTo(14, 28); x.lineTo(0, 14); x.stroke();
+    });
+  }
+
+  function skyDome(W, H) {
+    const T = THREE, R0 = 4500, geo = new T.SphereGeometry(R0, 24, 14), pos = geo.attributes.position, cols = [];
+    const top = new T.Color(0x3f86d6), mid = new T.Color(0x8fc3ee), hor = new T.Color(0xd8e8f2);
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i) / R0, c = new T.Color();
+      if (y > 0) c.copy(hor).lerp(mid, Math.min(1, y * 3)).lerp(top, Math.max(0, (y - 0.25) / 0.75)); else c.copy(hor);
+      cols.push(c.r, c.g, c.b);
+    }
+    geo.setAttribute('color', new T.Float32BufferAttribute(cols, 3)); geo.userData.own = true;
+    const m = new T.Mesh(geo, new T.MeshBasicMaterial({ vertexColors: true, side: T.BackSide, fog: false, depthWrite: false }));
+    m.position.set(W / 2, 0, H / 2); return m;
+  }
+
+  function addCar(w) {
+    const T = THREE, long = w.w >= w.h, L = long ? w.w : w.h, Wd = long ? w.h : w.w, PI2 = Math.PI / 2;
+    const g = new T.Group(); g.position.set(w.x + w.w / 2, 0, w.y + w.h / 2); if (!long) g.rotation.y = PI2;
+    const add = function (geo, mat, x, y, z, rx, ry, rz) { const m = new T.Mesh(geo, mat); m.position.set(x, y, z); if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0); g.add(m); return m; };
+    const body = new T.MeshLambertMaterial({ color: new T.Color(w.c || '#b3322d') }), glass = new T.MeshLambertMaterial({ color: 0x1f2b38, emissive: 0x0a1219 });
+    const black = new T.MeshLambertMaterial({ color: 0x111111 }), rust = new T.MeshLambertMaterial({ color: 0x6b3a22 });
+    add(gbox(L, 13, Wd), body, 0, 8, 0);
+    add(gbox(L * 0.5, 11, Wd * 0.9), glass, -L * 0.06, 19.5, 0);
+    add(gbox(L * 0.46, 1.8, Wd * 0.84), body, -L * 0.06, 25.4, 0);
+    add(gbox(L * 0.18, 0.6, Wd * 0.5), rust, L * 0.33, 14.9, 0); add(gbox(L * 0.16, 0.6, Wd * 0.45), rust, -L * 0.36, 14.9, 0);
+    [-1, 1].forEach(function (sx) { [-1, 1].forEach(function (sz) { add(gcyl(5.5, 5.5, 4.4, 10), black, sx * L * 0.3, 5.5, sz * (Wd / 2 - 1), PI2, 0, 0); }); });
+    [-1, 1].forEach(function (sz) { add(gbox(1, 3, Wd * 0.18), new T.MeshLambertMaterial({ color: 0xfff1b0, emissive: 0x555030 }), L / 2 + 0.4, 9, sz * Wd * 0.28); add(gbox(1, 3, Wd * 0.14), new T.MeshLambertMaterial({ color: 0xa01010, emissive: 0x300505 }), -L / 2 - 0.4, 9, sz * Wd * 0.3); });
+    add(gbox(1.4, 3.2, Wd), black, L / 2 + 0.6, 4.5, 0); add(gbox(1.4, 3.2, Wd), black, -L / 2 - 0.6, 4.5, 0);
+    scene.add(g);
+  }
+  function busLabel() {
+    return canvasTex('buslabel', 256, 40, function (x) { x.fillStyle = '#e0a020'; x.fillRect(0, 0, 256, 40); x.fillStyle = '#17131f'; x.font = '900 26px Impact, Arial Black, sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('EGG YARD SCHOOL BUS', 128, 22); });
+  }
+  function addBus(w) {
+    const T = THREE, long = w.w >= w.h, L = long ? w.w : w.h, Wd = long ? w.h : w.w, PI2 = Math.PI / 2;
+    const g = new T.Group(); g.position.set(w.x + w.w / 2, 0, w.y + w.h / 2); if (!long) g.rotation.y = PI2;
+    const add = function (geo, mat, x, y, z, rx, ry, rz) { const m = new T.Mesh(geo, mat); m.position.set(x, y, z); if (rx || ry || rz) m.rotation.set(rx || 0, ry || 0, rz || 0); g.add(m); return m; };
+    const body = new T.MeshLambertMaterial({ color: new T.Color(w.c || '#e0a020') }), glass = new T.MeshLambertMaterial({ color: 0x1f2b38, emissive: 0x0a1219 }), black = new T.MeshLambertMaterial({ color: 0x111111 });
+    add(gbox(L, 36, Wd), body, 0, 24, 0); add(gbox(L + 0.4, 5, Wd + 0.4), black, 0, 14, 0); add(gbox(L - 6, 2, Wd - 6), new T.MeshLambertMaterial({ color: new T.Color(w.c || '#e0a020').multiplyScalar(0.8) }), 0, 42.5, 0);
+    for (let s = -L / 2 + 22; s < L / 2 - 26; s += 20) [-1, 1].forEach(function (sz) { add(gbox(14, 11, 1.2), glass, s, 31, sz * (Wd / 2 + 0.3)); });
+    add(gbox(1.2, 17, Wd * 0.8), glass, L / 2 + 0.3, 31, 0);
+    [-1, 1].forEach(function (sz) { const lm = new T.MeshLambertMaterial({ map: busLabel().clone() }); lm.map.needsUpdate = true; const pl = new T.Mesh(new T.PlaneGeometry(L * 0.5, 7.5), lm); pl.geometry.userData.own = true; pl.position.set(-L * 0.05, 21, sz * (Wd / 2 + 0.45)); if (sz < 0) pl.rotation.y = Math.PI; g.add(pl); });
+    [-0.34, 0, 0.34].forEach(function (f) { [-1, 1].forEach(function (sz) { add(gcyl(7, 7, 5, 12), black, f * L, 7, sz * (Wd / 2 - 1), PI2, 0, 0); }); });
+    scene.add(g);
+  }
+  function addCrate(w) {
+    const T = THREE, hgt = 26, m = new T.Mesh(gbox(w.w, hgt, w.h), wallMats(w, hgt)); m.position.set(w.x + w.w / 2, hgt / 2, w.y + w.h / 2); scene.add(m);
+    const e = new T.LineSegments(new T.EdgesGeometry(gbox(w.w, hgt, w.h)), new T.LineBasicMaterial({ color: 0x3a2410 })); e.geometry.userData.own = true; e.position.copy(m.position); scene.add(e);
+  }
+  function addBuildingWall(w, canopyZ) {
+    const T = THREE;
+    let hgt = w.m === 'brick' ? 128 : w.m === 'plaster' ? 84 : 104;
+    if (w.w <= 30 && w.h <= 30 && canopyZ) hgt = canopyZ; else hgt *= 0.92 + ((Math.floor(w.x * 7 + w.y * 13) % 17) / 17) * 0.16;
+    const m = new T.Mesh(gbox(w.w, hgt, w.h), wallMats(w, hgt)); m.position.set(w.x + w.w / 2, hgt / 2, w.y + w.h / 2); scene.add(m);
+    const e = new T.LineSegments(new T.EdgesGeometry(gbox(w.w, hgt, w.h)), new T.LineBasicMaterial({ color: 0x2a2018 })); e.geometry.userData.own = true; e.position.copy(m.position); scene.add(e);
+    const long = w.w >= w.h, len = long ? w.w : w.h, th = long ? w.h : w.w;
+    if ((w.m === 'brick' || w.m === 'plaster') && len >= 80 && th <= 30 && hgt >= 70) {
+      const n = Math.floor((len - 24) / 60), glass = new T.MeshLambertMaterial({ color: 0x1b2733, emissive: 0x0a1219 }), frame = new T.MeshLambertMaterial({ color: 0xe9e2d0 });
+      for (let i = 0; i < n; i++) {
+        const along = 12 + (len - n * 60) / 2 + i * 60 + 30;
+        [-1, 1].forEach(function (side) {
+          const px = long ? w.x + along : w.x + (side < 0 ? -0.5 : w.w + 0.5), pz = long ? w.y + (side < 0 ? -0.5 : w.h + 0.5) : w.y + along, y = hgt * 0.6;
+          const fr = new T.Mesh(long ? gbox(28, 34, 1.2) : gbox(1.2, 34, 28), frame); fr.position.set(px, y, pz); scene.add(fr);
+          const gl = new T.Mesh(long ? gbox(22, 28, 1.8) : gbox(1.8, 28, 22), glass); gl.position.set(px + (long ? 0 : (side < 0 ? -0.3 : 0.3)), y, pz + (long ? (side < 0 ? -0.3 : 0.3) : 0)); scene.add(gl);
+        });
+      }
+    }
+  }
+  function addFence(W, H) {
+    const T = THREE, post = new T.MeshLambertMaterial({ color: 0x4b525c });
+    const ct = chainTexture();
+    [[0, 0, W, 0], [W, 0, W, H], [W, H, 0, H], [0, H, 0, 0]].forEach(function (sd) {
+      const x0 = sd[0], z0 = sd[1], x1 = sd[2], z1 = sd[3], L = Math.hypot(x1 - x0, z1 - z0), ux = (x1 - x0) / L, uz = (z1 - z0) / L, alongX = Math.abs(ux) > 0.5;
+      for (let s = 0; s <= L + 0.1; s += 60) { const p = new T.Mesh(gbox(3.6, 54, 3.6), post); p.position.set(x0 + ux * s, 27, z0 + uz * s); scene.add(p); }
+      [52, 28, 4].forEach(function (y) { const r = new T.Mesh(alongX ? gbox(L, 1.6, 1.6) : gbox(1.6, 1.6, L), post); r.position.set((x0 + x1) / 2, y, (z0 + z1) / 2); scene.add(r); });
+      const t = ct.clone(); t.needsUpdate = true; t.wrapS = t.wrapT = T.RepeatWrapping; t.repeat.set(L / 14, 46 / 14);
+      const pl = new T.Mesh(new T.PlaneGeometry(L, 46), new T.MeshBasicMaterial({ map: t, transparent: true, alphaTest: 0.3, side: T.DoubleSide }));
+      pl.geometry.userData.own = true; pl.position.set((x0 + x1) / 2, 27, (z0 + z1) / 2); if (!alongX) pl.rotation.y = Math.PI / 2; scene.add(pl);
+    });
+  }
+
+  function buildOutdoor(G0) {
+    const T = THREE, map = G0.map, W = map.W, H = map.H, decor = map.decor;
+    scene.background = new T.Color(0xd8e8f2);
+    scene.fog = new T.Fog(0xd8e8f2, 1500, 3600);
+    scene.add(new T.AmbientLight(0xffffff, 0.62));
+    const sun = new T.DirectionalLight(0xfff0d0, 0.95); sun.position.set(W / 2 + 1200, 1000, H / 2 - 900); scene.add(sun);
+    scene.add(new T.HemisphereLight(0xbfe0ff, 0x6b5b3a, 0.35));
+    scene.add(skyDome(W, H));
+    const sunDisc = new T.Mesh(gsph(90), new T.MeshBasicMaterial({ color: 0xfff6c8, fog: false })); sunDisc.position.set(W / 2 + 2600, 2100, H / 2 - 3300); scene.add(sunDisc);
+    // clouds
+    for (let i = 0; i < 9; i++) {
+      const cm = new T.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.92, fog: false }), cg = new T.Group();
+      for (let k = 0; k < 4; k++) { const s = new T.Mesh(gsph(1), cm); s.scale.set(120 + k * 18, 38 + (k % 2) * 12, 80); s.position.set(k * 95 - 140, (k % 2) * 12, (k % 3) * 30); cg.add(s); }
+      cg.position.set(W / 2 + Math.cos(i * 2.4) * (1800 + (i % 3) * 600), 800 + (i % 4) * 130, H / 2 + Math.sin(i * 2.4) * (1800 + (i % 2) * 700)); scene.add(cg);
+    }
+    // distant skyline
+    for (let i = 0; i < 24; i++) {
+      const a = i / 24 * Math.PI * 2 + (i % 3) * 0.05, r = 2200 + (i * 97) % 400, bw = 140 + (i * 53) % 120, bh = 160 + (i * 131) % 360;
+      const b = new T.Mesh(gbox(bw, bh, 120 + (i * 29) % 80), new T.MeshLambertMaterial({ color: i % 2 ? 0x9aa8ba : 0x8e9fb3 }));
+      b.position.set(W / 2 + Math.cos(a) * r, bh / 2, H / 2 + Math.sin(a) * r); b.rotation.y = -a; scene.add(b);
+    }
+    // ground: textured play area + dusty field beyond the fence
+    const tex = new T.CanvasTexture(G0.floor); tex.anisotropy = Math.min(4, R.capabilities.getMaxAnisotropy());
+    const floor = new T.Mesh(new T.PlaneGeometry(W, H), new T.MeshLambertMaterial({ map: tex })); floor.geometry.userData.own = true;
+    floor.rotation.x = -Math.PI / 2; floor.position.set(W / 2, 0, H / 2); scene.add(floor);
+    const outer = new T.Mesh(new T.PlaneGeometry(W * 8, H * 8), new T.MeshLambertMaterial({ color: 0x7f8f4c })); outer.geometry.userData.own = true;
+    outer.rotation.x = -Math.PI / 2; outer.position.set(W / 2, -1, H / 2); scene.add(outer);
+    // buildings, cars, crates
+    const canopyZ = decor.canopy ? decor.canopy.z : 0;
+    map.walls.forEach(function (w) { if (w.car === 'bus') addBus(w); else if (w.car) addCar(w); else if (w.m === 'crate') addCrate(w); else addBuildingWall(w, canopyZ); });
+    if (decor.canopy) {
+      const cn = decor.canopy, slab = new T.Mesh(gbox(cn.w + 16, 5, cn.h + 16), new T.MeshLambertMaterial({ color: 0xc0392b }));
+      slab.position.set(cn.x + cn.w / 2, cn.z + 2, cn.y + cn.h / 2); scene.add(slab);
+      const band = new T.Mesh(gbox(cn.w + 18, 1.8, cn.h + 18), new T.MeshLambertMaterial({ color: 0xffffff })); band.position.set(cn.x + cn.w / 2, cn.z - 1.4, cn.y + cn.h / 2); scene.add(band);
+      [[0.25, 0.25], [0.75, 0.25], [0.25, 0.75], [0.75, 0.75]].forEach(function (f) { const l = new T.Mesh(gbox(14, 1, 14), new T.MeshBasicMaterial({ color: 0xfff6c2 })); l.position.set(cn.x + cn.w * f[0], cn.z - 2.6, cn.y + cn.h * f[1]); scene.add(l); });
+    }
+    if (decor.fence) addFence(W, H);
+    // trees beyond the fence
+    const greens = [0x2f6b35, 0x3b7d3c, 0x356b2c], trunk = new T.MeshLambertMaterial({ color: 0x5a3a22 });
+    for (let i = 0; i < 28; i++) {
+      const sd = i % 4, t = ((i * 0.137) % 1), off = 70 + (i * 53) % 150;
+      const x = sd === 2 ? -off : sd === 3 ? W + off : t * W * 1.1 - W * 0.05, z = sd === 0 ? -off : sd === 1 ? H + off : t * H;
+      const g = new T.Group(); g.position.set(x, 0, z);
+      const tm = new T.Mesh(gcyl(3, 4, 26, 6), trunk); tm.position.y = 13; g.add(tm);
+      const f1 = new T.Mesh(gcone(17, 36, 7), new T.MeshLambertMaterial({ color: greens[i % 3] })); f1.position.y = 44; g.add(f1);
+      const f2 = new T.Mesh(gcone(13, 30, 7), new T.MeshLambertMaterial({ color: greens[(i + 1) % 3] })); f2.position.y = 62; g.add(f2);
+      scene.add(g);
     }
   }
 
