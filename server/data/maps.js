@@ -90,5 +90,58 @@ const MAPS = {};
   };
 })();
 
+// ---------- EGG YARD (outdoor: open sky, abandoned cars, ruined buildings, perimeter fence) ----------
+// Extra fields on a rect: c = colour, m = material ('brick' | 'concrete' | 'plaster' | 'crate'), car = vehicle kind ('car' | 'bus')
+(function () {
+  const W = 1600, H = 1000;
+  const wall = (x, y, w, h, c, m) => ({ x, y, w, h, t: 'wall', c, m });
+  const crate = (x, y, w, h) => ({ x, y, w, h, t: 'low', c: '#a9793f', m: 'crate' });
+  const car = (x, y, w, h, c) => ({ x, y, w, h, t: 'low', c, car: 'car' });
+  const BRICK = '#9c4a3a', CONC = '#8d8a84', PLASTER = '#d8c79a';
+  const base = [
+    // ruined house (door south, window gap east)
+    wall(140, 110, 250, 22, BRICK, 'brick'), wall(140, 110, 22, 180, BRICK, 'brick'),
+    wall(368, 110, 22, 60, BRICK, 'brick'), wall(368, 232, 22, 58, BRICK, 'brick'),
+    wall(140, 268, 90, 22, BRICK, 'brick'), wall(312, 268, 78, 22, BRICK, 'brick'),
+    // collapsed garage corner
+    wall(560, 170, 22, 170, CONC, 'concrete'), wall(560, 170, 160, 22, CONC, 'concrete'),
+    wall(440, 60, 100, 22, CONC, 'concrete'),
+    // abandoned school bus on the road (solid, too tall to jump)
+    { x: 330, y: 440, w: 190, h: 52, t: 'wall', c: '#e0a020', car: 'bus' },
+    // rusting cars (jumpable cover) and crates
+    car(150, 395, 50, 100, '#b3322d'), car(600, 395, 104, 48, '#3f8f4a'), car(640, 270, 48, 92, '#2f6fb5'), car(250, 330, 90, 46, '#d9b21f'),
+    crate(440, 200, 40, 40), crate(445, 255, 40, 40)
+  ];
+  const walls = mirrorRects(W, H, base);
+  // gas-station kiosk in the middle (door gaps on north and south) + canopy posts
+  const kiosk = [
+    wall(730, 440, 44, 20, PLASTER, 'plaster'), wall(826, 440, 44, 20, PLASTER, 'plaster'),
+    wall(730, 540, 44, 20, PLASTER, 'plaster'), wall(826, 540, 44, 20, PLASTER, 'plaster'),
+    wall(730, 440, 20, 120, PLASTER, 'plaster'), wall(850, 440, 20, 120, PLASTER, 'plaster'),
+    wall(676, 372, 26, 26, CONC, 'concrete'), wall(898, 372, 26, 26, CONC, 'concrete'),
+    wall(676, 602, 26, 26, CONC, 'concrete'), wall(898, 602, 26, 26, CONC, 'concrete')
+  ];
+  kiosk.forEach(r => walls.push(r));
+  MAPS.yard = {
+    id: 'yard', name: 'Egg Yard', W, H, walls,
+    spawns: [[70, 70], [1530, 70], [70, 930], [1530, 930], [800, 60], [800, 940], [60, 500], [1540, 500]],
+    weaponSpots: mirrorPts(W, H, [[265, 200]]).concat([[800, 500], [640, 500], [960, 500], [800, 170], [800, 830]]),
+    itemSpots: mirrorPts(W, H, [[450, 330], [100, 250], [620, 110]]).concat([[800, 330], [800, 670]]),
+    decor: {
+      theme: 'outdoor', fence: true,
+      canopy: { x: 676, y: 372, w: 248, h: 256, z: 112 }, // gas-station roof over the four concrete posts
+      roads: [{ x: 0, y: 440, w: W, h: 120 }],
+      paths: [{ x1: 800, y1: 0, x2: 800, y2: 440, w: 90 }, { x1: 800, y1: 560, x2: 800, y2: H, w: 90 }],
+      pads: [], neon: [],
+      graffiti: [
+        { x: 800, y: 700, text: 'EGG YARD', s: 54, rot: 0, c: '#ffcb2f' },
+        { x: 300, y: 740, text: 'NO PARKING', s: 26, rot: -0.05, c: '#ffffff' },
+        { x: 1300, y: 260, text: 'NO PARKING', s: 26, rot: 0.05, c: '#ffffff' }
+      ],
+      logos: [{ x: 560, y: 500, r: 34 }, { x: 1040, y: 500, r: 34 }]
+    }
+  };
+})();
+
 const MAP_LIST = Object.values(MAPS).map(m => ({ id: m.id, name: m.name }));
 module.exports = { MAPS, MAP_LIST };
