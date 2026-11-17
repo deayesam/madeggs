@@ -111,6 +111,8 @@ input.t:focus{border-color:var(--purple)}
   #s-fit.on{display:grid;grid-template-columns:38% 1fr;grid-template-rows:auto 1fr;grid-template-areas:"back tabs" "egg opts";gap:6px 10px}
   #s-fit .back{grid-area:back}#f-egg{grid-area:egg;width:100%;height:100%}.tabs{grid-area:tabs}.opts{grid-area:opts;max-width:none}
 }
+/* results */
+.regg{width:min(70vw,230px);height:190px;display:block;margin:0 auto}
 /* lobby */
 .code-box{display:flex;align-items:center;gap:10px;justify-content:space-between}
 .code{font-family:var(--disp);font-size:34px;letter-spacing:.08em;color:var(--gold)}
@@ -406,21 +408,21 @@ let etT;
 function err(msg) { const e = $('#etoast'); e.textContent = msg; e.classList.add('on'); clearTimeout(etT); etT = setTimeout(() => e.classList.remove('on'), 3200); }
 
 /* ============================ audio ============================ */
-let AC = null;
+let AC = null, VOLMUL = 1;
 function actx() { if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { return null; } } if (AC.state === 'suspended') AC.resume(); return AC; }
 function tone(f1, f2, dur, type, vol, delay) {
   if (!S.set.sound) return; const a = actx(); if (!a) return;
   const t = a.currentTime + (delay || 0), o = a.createOscillator(), g = a.createGain();
   o.type = type || 'square'; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(Math.max(30, f2), t + dur);
-  g.gain.setValueAtTime(vol || .06, t); g.gain.exponentialRampToValueAtTime(.0008, t + dur);
+  g.gain.setValueAtTime((vol || .06) * VOLMUL, t); g.gain.exponentialRampToValueAtTime(.0008, t + dur);
   o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + .02);
 }
-function noise(dur, vol, lp) {
+function noise(dur, vol, lp, ftype) {
   if (!S.set.sound) return; const a = actx(); if (!a) return;
   const n = a.sampleRate * dur, b = a.createBuffer(1, n, a.sampleRate), d = b.getChannelData(0);
   for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
-  const s = a.createBufferSource(); s.buffer = b; const g = a.createGain(); g.gain.value = vol;
-  const f = a.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp || 1200;
+  const s = a.createBufferSource(); s.buffer = b; const g = a.createGain(); g.gain.value = vol * VOLMUL;
+  const f = a.createBiquadFilter(); f.type = ftype || 'lowpass'; f.frequency.value = lp || 1200;
   s.connect(f); f.connect(g); g.connect(a.destination); s.start();
 }
 const SFX = {
@@ -434,9 +436,65 @@ const SFX = {
   go: () => { tone(300, 600, .15, 'square', .08); tone(600, 1200, .3, 'square', .08, .15); },
   win: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, f, .22, 'square', .07, i * .14))
 };
+Object.assign(SFX, {
+  hitBig: () => { tone(700, 500, .06, 'triangle', .08); tone(1300, 900, .05, 'square', .04, .02); },
+  death: () => { tone(520, 90, .2, 'sawtooth', .06); noise(.18, .1, 2200); }, thunder: () => { noise(.55, .32, 2600); tone(90, 28, .55, 'sawtooth', .11); },
+  jump: () => tone(260, 620, .14, 'sine', .06), reload: () => { tone(520, 300, .04, 'square', .05); tone(340, 620, .05, 'square', .05, .22); },
+  spawn: () => { tone(300, 950, .16, 'sine', .07); tone(500, 1200, .12, 'triangle', .05, .06); }, poof: () => { tone(500, 220, .08, 'sine', .06); noise(.08, .06, 3000); },
+  pickW: () => { noise(.05, .1, 3000); tone(300, 200, .05, 'square', .05); tone(500, 760, .06, 'square', .05, .07); },
+  myst: () => { for (let i = 0; i < 4; i++) { const f = [523, 659, 784, 988, 1175][Math.floor(Math.random() * 5)]; tone(f, f * 1.01, .12, 'triangle', .07, i * .08); } },
+  foot: i => noise(.05, .035, 420 + (i ? 160 : 0)), heart: () => { tone(70, 45, .12, 'sine', .16); tone(64, 40, .14, 'sine', .13, .17); },
+  ui: () => tone(900, 640, .035, 'square', .03)
+});
+// one distinct sound per weapon (fired by the 'shot' / 'swing' events) and per ability
+const SFX_W = {
+  pistol: () => { tone(900, 180, .07, 'square', .05); noise(.04, .05, 3000); },
+  rifle: () => { tone(700, 140, .05, 'sawtooth', .045); noise(.03, .05, 4000); },
+  scatter: () => { noise(.22, .16, 1800); tone(150, 50, .18, 'sawtooth', .09); },
+  plasma: () => { tone(300, 900, .25, 'sine', .07); tone(120, 60, .3, 'sawtooth', .05); },
+  bow: () => { tone(220, 90, .12, 'triangle', .07); tone(1800, 900, .18, 'sine', .025); },
+  grenade: () => { tone(200, 70, .12, 'square', .07); noise(.08, .1, 1200); },
+  omelette: () => { tone(700, 380, .05, 'square', .04); tone(420, 520, .04, 'triangle', .04, .045); }
+};
+const SFX_SW = {
+  hammer: () => { tone(90, 40, .2, 'sine', .12); noise(.12, .12, 900); tone(1200, 300, .12, 'square', .03); },
+  blades: () => { noise(.1, .08, 6000, 'highpass'); tone(1500, 2400, .08, 'triangle', .03); }
+};
+const SFX_A = {
+  phantom: () => { tone(900, 150, .4, 'sine', .07); noise(.3, .05, 4000, 'highpass'); },
+  thunder: () => { tone(500, 200, .12, 'sawtooth', .06); },
+  timelock: () => { tone(1000, 990, .05, 'square', .06); tone(1000, 990, .05, 'square', .06, .13); tone(1000, 990, .05, 'square', .06, .26); tone(300, 100, .5, 'sine', .06, .3); },
+  clone: () => { tone(600, 900, .05, 'sine', .07); tone(700, 1000, .05, 'sine', .07, .08); },
+  fortress: () => { tone(200, 180, .12, 'square', .07); noise(.12, .1, 3000); },
+  phoenix: () => { tone(300, 1200, .5, 'sawtooth', .06); noise(.5, .1, 2000); },
+  gravity: () => { tone(80, 200, .7, 'sine', .1); tone(85, 210, .7, 'sine', .08); },
+  berserk: () => { tone(110, 220, .5, 'sawtooth', .09); noise(.3, .08, 800); },
+  heal: () => [660, 880, 1100, 1320].forEach((f, i) => tone(f, f, .12, 'sine', .05, i * .07)),
+  frost: () => { [2200, 1800, 2600, 2000].forEach((f, i) => tone(f, f * .9, .1, 'triangle', .04, i * .04)); noise(.15, .04, 7000, 'highpass'); },
+  void: () => { tone(1200, 100, .35, 'sine', .07); tone(100, 1200, .2, 'sine', .05, .2); },
+  chaos: () => { for (let i = 0; i < 5; i++) tone(200 + Math.random() * 1200, 200 + Math.random() * 1200, .09, ['square', 'sawtooth', 'triangle'][i % 3], .05, i * .06); }
+};
+function atPos(fn, id, x, y) {
+  let d = 0;
+  if (G && G.pred) {
+    if (id != null && id !== G.you) { const o = (G.others || []).find(q => q.i === id && !q.clone); if (o) d = Math.hypot(o.x - G.pred.x, o.y - G.pred.y); }
+    else if (id == null && x != null) d = Math.hypot(x - G.pred.x, y - G.pred.y);
+  }
+  VOLMUL = clamp(1 - d / 1100, 0.12, 1);
+  try { fn(); } catch (e) { /* audio is optional */ }
+  VOLMUL = 1;
+}
+function stepSounds(now, me, mx, my) {
+  if (!me.al || !G.last || G.last.ph !== 'live') return;
+  const s = G.snd || (G.snd = { x: mx, y: my, acc: 0, hb: 0, foot: 0 });
+  const d = Math.hypot(mx - s.x, my - s.y); s.x = mx; s.y = my;
+  if (d > 0 && d < 40) { s.acc += d; if (s.acc > 46) { s.acc = 0; s.foot ^= 1; SFX.foot(s.foot); } }
+  if (me.hp < 30 && now > s.hb) { s.hb = now + 850; SFX.heart(); }
+}
 const sfx = n => { try { SFX[n] && SFX[n](); } catch (e) { /* audio is optional */ } };
 const vib = ms => { if (S.set.vib && navigator.vibrate) navigator.vibrate(ms); };
 document.addEventListener('pointerdown', () => actx(), { once: true });
+document.addEventListener('pointerdown', e => { if (e.target.closest && e.target.closest('.btn,.opt,.tab,.big,.corner,.fitbtn,.chip,.sw i,.seg *')) sfx('ui'); });
 
 /* ============================ art ============================ */
 const SHELL = '#f3e9d2', INK = '#0b0912';
@@ -907,33 +965,35 @@ function handleEv(e) {
     case 'hit':
       G.floats.push({ x: e.x, y: e.y - 16, t: now, txt: e.d, c: e.by === G.you ? '#ffcb2f' : '#fff', big: e.by === G.you });
       if (e.id === G.you) { $('#dmgflash').style.opacity = .9; setTimeout(() => $('#dmgflash').style.opacity = 0, 60); sfx('hurt'); vib(25); }
-      else if (e.by === G.you) sfx('hit');
+      else if (e.by === G.you) sfx(e.d >= 30 ? 'hitBig' : 'hit');
       G.fx.push({ k: 'spark', x: e.x, y: e.y, t: now, d: 260 });
       break;
     case 'kill': {
       const kn = e.k != null ? who(e.k) : null, line = e.m;
       pushFeed(line, e.k === G.you ? '#ffcb2f' : e.v === G.you ? '#ff4d5e' : '#a45cff');
-      if (e.k === G.you) { sfx('kill'); vib(40); toast('ELIMINATED ' + who(e.v)); }
+      if (e.k === G.you) { sfx('kill'); vib(40); toast('ELIMINATED ' + who(e.v)); } else if (e.v !== G.you) atPos(SFX.death, null, e.x, e.y);
       G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 500, c: '#ff4d7e', r: 60 });
       break;
     }
-    case 'boom': G.fx.push({ k: 'boom', x: e.x, y: e.y, t: now, d: 420, r: e.r, c: CH[e.c] ? CH[e.c].color : '#fff' }); sfx('boom'); break;
+    case 'boom': G.fx.push({ k: 'boom', x: e.x, y: e.y, t: now, d: 420, r: e.r, c: CH[e.c] ? CH[e.c].color : '#fff' }); atPos(SFX.boom, null, e.x, e.y); break;
     case 'warn': G.fx.push({ k: 'warn', x: e.x, y: e.y, t: now, d: e.d * 1000, r: e.r }); break;
-    case 'thunder': G.fx.push({ k: 'bolt', x: e.x, y: e.y, t: now, d: 300, r: e.r }); sfx('boom'); break;
+    case 'thunder': G.fx.push({ k: 'bolt', x: e.x, y: e.y, t: now, d: 300, r: e.r }); atPos(SFX.thunder, null, e.x, e.y); break;
     case 'fx': { const a = G.abil[e.a]; G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 650, c: a ? a.color : '#fff', r: 90 }); break; }
-    case 'swing': G.fx.push({ k: 'swing', x: e.x, y: e.y, a: e.a, r: e.r, t: now, d: 160 }); sfx('shot'); break;
-    case 'poof': G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 350, c: '#9aa0ff', r: 30 }); break;
-    case 'jump': G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 300, c: '#ffffff', r: 26 }); break;
-    case 'respawn': G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 600, c: '#38e07b', r: 50 }); break;
-    case 'phoenix': G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 900, c: '#ff8a3d', r: 120 }); sfx('abil'); break;
-    case 'shot': if (e.i === G.you) sfx('shotMe'); else sfx('shot'); break;
-    case 'abil': { const a = G.abil[e.a]; pushFeed(`${a.icon} ${who(e.id)} used ${a.name}`, a.color); sfx('abil'); break; }
+    case 'swing': G.fx.push({ k: 'swing', x: e.x, y: e.y, a: e.a, r: e.r, t: now, d: 160 }); atPos(SFX_SW[e.w] || SFX.shot, e.i); break;
+    case 'poof': G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 350, c: '#9aa0ff', r: 30 }); atPos(SFX.poof, null, e.x, e.y); break;
+    case 'jump': G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 300, c: '#ffffff', r: 26 }); atPos(SFX.jump, e.id); break;
+    case 'reload': atPos(SFX.reload, e.id); break;
+    case 'respawn': G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 600, c: '#38e07b', r: 50 }); atPos(SFX.spawn, e.id); break;
+    case 'phoenix': G.fx.push({ k: 'ring', x: e.x, y: e.y, t: now, d: 900, c: '#ff8a3d', r: 120 }); atPos(SFX_A.phoenix, e.id); break;
+    case 'shot': atPos(SFX_W[e.w] || SFX.shot, e.i); break;
+    case 'abil': { const a = G.abil[e.a]; pushFeed(`${a.icon} ${who(e.id)} used ${a.name}`, a.color); atPos(SFX_A[e.a] || SFX.abil, e.id); break; }
     case 'feed': pushFeed(e.text, '#ffcb2f'); break;
-    case 'pick': toast(e.text); sfx(e.kind === 'mystery' ? 'cluck' : 'pick'); break;
+    case 'pick': toast(e.text); sfx(e.kind === 'mystery' ? 'myst' : e.kind === 'weapon' ? 'pickW' : 'pick'); break;
     case 'reveal': G.abMap = e.ab; sfx('reveal'); break;
     case 'go': G.shownFight = true; sfx('go'); $('#ov-fight').classList.add('on'); setTimeout(() => $('#ov-fight').classList.remove('on'), 900); break;
     case 'end': sfx('win'); break;
   }
+  if (G.use3d && typeof V3 !== 'undefined') { try { V3.on(e, G, now); } catch (x) { /* visuals are optional */ } }
 }
 function pushFeed(text, c) {
   const el = document.createElement('div'); el.textContent = text; el.style.borderLeftColor = c || '#ffcb2f';
@@ -1036,6 +1096,7 @@ function frame(now) {
   G.renderMe.x = mx; G.renderMe.y = my;
   const others = computeOthers(now).map(o => o.i === G.you ? Object.assign(o, { x: mx, y: my, a: G.aim, isMe: true, r: me.r, air: G.air > 0 ? 1 : 0 }) : o);
   G.others = others;
+  stepSounds(now, me, mx, my);
   if (G.use3d) return frame3d(now, mx, my, others, me);
   // camera
   const vw = cw / sc / 2, vh = ch / sc / 2;
@@ -1122,16 +1183,18 @@ function showResults(res) {
   show('res'); sfx('win'); vib(80);
   const r = S.room, host = r && r.host === S.id;
   const rank = res.ranking, win = rank[0], quip = WIN_QUIPS[Math.floor(Math.random() * WIN_QUIPS.length)];
+  const wpl = res.draw ? null : res.mode === 'tdm' ? rank.find(p => p.team === res.winTeam) : win;
+  const eggOk = !!wpl && typeof V3 !== 'undefined' && V3.supported();
   let head;
   if (res.mode === 'tdm') {
     const t = res.winTeam;
     head = `<div class="trophy">\u{1F3C6}</div><div class="vic">${res.draw ? 'DRAW' : 'TEAM VICTORY'}</div>
       <div class="win" style="color:${res.draw ? '#fff' : TEAM[t].c}">${res.draw ? 'NOBODY CRACKED FIRST' : TEAM[t].n + ' WINS'}</div>
-      <div class="tscore">${[0, 1].map(i => `<div style="background:${TEAM[i].c}22;color:${TEAM[i].c};border:2px solid ${TEAM[i].c}">${TEAM[i].n} ${res.ts[i]}</div>`).join('')}</div>`;
+      <div class="tscore">${[0, 1].map(i => `<div style="background:${TEAM[i].c}22;color:${TEAM[i].c};border:2px solid ${TEAM[i].c}">${TEAM[i].n} ${res.ts[i]}</div>`).join('')}</div>${eggOk ? '<canvas id="r-egg" class="regg"></canvas>' : ''}`;
   } else {
     head = `<div class="trophy">\u{1F3C6}</div><div class="vic">${res.draw ? 'DRAW' : 'VICTORY'}</div>
       <div class="win" style="color:${CH[win.char].color}">${res.draw ? 'TOO CLOSE TO CALL' : '1ST - ' + esc(win.name.toUpperCase())}</div>
-      <div style="width:90px">${portrait(win.char)}</div>`;
+      ${eggOk ? '<canvas id="r-egg" class="regg"></canvas>' : `<div style="width:90px">${portrait(win.char)}</div>`}`;
   }
   const row = (p, i) => `<tr class="${p.id === S.id ? 'me' : ''}"><td><span class="nm-d">${res.mode === 'ffa' ? (i + 1) + '. ' : ''}${portrait(p.char)}<span style="color:${CH[p.char].color}">${esc(p.name)}</span></span></td><td>${p.kills}</td><td>${p.deaths}</td><td>${p.damage}</td><td>${p.abil}</td><td>${p.pickups}</td></tr>`;
   const th = '<tr><th>PLAYER</th><th>ELIMS</th><th>DEATHS</th><th>DMG</th><th>ABIL</th><th>PICKS</th></tr>';
@@ -1141,6 +1204,7 @@ function showResults(res) {
   const mine = rank.find(p => p.id === S.id), ab = mine && mine.ability && S.abil && S.abil[mine.ability];
   $('#s-res').innerHTML = `${head}<div class="quip">${quip}</div><div class="quip">${ab ? 'Your ability this match: ' + ab.icon + ' ' + ab.name : ''}</div>${table}
     <div class="col" style="width:min(92vw,420px);margin-top:12px">${host ? '<button class="btn pri" id="r-again">PLAY AGAIN</button><button class="btn pur" id="r-lobby">RETURN TO LOBBY</button>' : '<div class="note">Waiting for the host to pick what is next...</div>'}<button class="btn sm" id="r-leave">LEAVE ROOM</button></div><div style="height:30px"></div>`;
+  if (eggOk && $('#r-egg')) { const rp = (S.room && S.room.players.find(p => p.id === wpl.id)) || {}; V3.preview($('#r-egg'), () => ({ look: rp.look || MECOS.DEFAULT_LOOK, name: wpl.name, spin: false, pose: 'win' })); }
   if (host) { $('#r-again').onclick = () => send({ t: 'again' }); $('#r-lobby').onclick = () => send({ t: 'lobby' }); }
   $('#r-leave').onclick = () => send({ t: 'leave' });
   document.querySelectorAll('.conf').forEach(e => e.remove());
